@@ -15,7 +15,7 @@ The code is already interfaced with the following environments:
 
 - [DeepMind lab](https://github.com/deepmind/lab)
 
-- [Google Research Football](https://github.com/anonymized/football)
+- [Google Research Football](https://github.com/google-research/football)
 
 However, any reinforcement learning environment using the [gym
 API](https://github.com/openai/gym/blob/master/gym/core.py) can be used.
@@ -55,7 +55,7 @@ apt-get install git
 
 - Clone SEED git repository:
 ```shell
-git clone https://github.com/anonymized/seed_rl.git
+git clone https://github.com/google-research/seed_rl.git
 cd seed_rl
 ```
 

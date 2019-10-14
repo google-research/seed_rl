@@ -1,0 +1,76 @@
+# Copyright 2019 The SEED Authors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+ARG grpc_image
+FROM $grpc_image
+
+RUN apt-get update && apt-get install -y tmux
+
+RUN apt-get update && apt-get install -y \
+    curl \
+    zip \
+    unzip \
+    software-properties-common \
+    pkg-config \
+    g++-4.8 \
+    zlib1g-dev \
+    lua5.1 \
+    liblua5.1-0-dev \
+    libffi-dev \
+    gettext \
+    freeglut3 \
+    libsdl2-dev \
+    libosmesa6-dev \
+    libglu1-mesa \
+    libglu1-mesa-dev \
+    python3-dev \
+    build-essential \
+    git \
+    python-setuptools \
+    python3-pip \
+    libjpeg-dev
+
+WORKDIR /
+
+# Build and install DeepMind Lab pip package.
+# We explicitly set the Numpy path as shown here:
+# https://github.com/deepmind/lab/blob/master/docs/users/build.md
+RUN NP_INC="$(python3 -c 'import numpy as np; print(np.get_include()[5:])')" && \
+    git clone https://github.com/deepmind/lab.git && \
+    cd lab && \
+    git checkout 937d53eecf7b46fbfc56c62e8fc2257862b907f2 && \
+    sed -i 's@python3.5@python3.6@g' python.BUILD && \
+    sed -i 's@glob(\[@glob(["'"$NP_INC"'/\*\*/*.h", @g' python.BUILD && \
+    sed -i 's@: \[@: ["'"$NP_INC"'", @g' python.BUILD && \
+    bazel build -c opt python/pip_package:build_pip_package && \
+    pip3 install wheel && \
+    PYTHON_BIN_PATH="/usr/bin/python3" ./bazel-bin/python/pip_package/build_pip_package /tmp/dmlab_pkg && \
+    pip3 install /tmp/dmlab_pkg/DeepMind_Lab-*.whl --force-reinstall && \
+    rm -rf /lab
+
+# Install dataset (from https://github.com/deepmind/lab/tree/master/data/brady_konkle_oliva2008)
+RUN mkdir dataset && \
+    cd dataset && \
+    pip3 install Pillow && \
+    curl -sS https://raw.githubusercontent.com/deepmind/lab/master/data/brady_konkle_oliva2008/README.md | \
+    tr '\n' '\r' | \
+    sed -e 's/.*```sh\(.*\)```.*/\1/' | \
+    tr '\r' '\n' | \
+    bash
+
+RUN pip3 install gym
+
+# Copy SEED codebase and SEED GRPC binaries.
+ADD . /seed_rl/
+WORKDIR /seed_rl
+ENTRYPOINT ["python3", "gcp/run.py"]

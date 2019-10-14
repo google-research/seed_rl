@@ -1,0 +1,45 @@
+# Copyright 2019 The SEED Authors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+FROM tensorflow/tensorflow:custom-op-ubuntu16 as grpc_compile
+WORKDIR /
+RUN apt-get update && apt-get install -y \
+    git \
+    wget
+
+ENV BUILD_FLAGS '-c opt --config=v2 --crosstool_top=//third_party/toolchains/preconfig/ubuntu16.04/gcc7_manylinux2010-nvcc-cuda10.0:toolchain'
+ENV CC_OPT_FLAGS='-mavx'
+ENV IS_NIGHTLY=0
+ENV PYTHON_BIN_PATH=/usr/bin/python3
+
+# Build GRPC layer.
+WORKDIR /
+RUN git clone https://github.com/tensorflow/tensorflow /tensorflow_src # Get the freshest tf nightly
+WORKDIR /tensorflow_src
+RUN python tensorflow/tools/ci_build/update_version.py --version=2.0.0-preview --nightly
+RUN yes "" | ./configure
+RUN mkdir -p /tensorflow_src/tensorflow/cc/seed_rl/grpc
+ADD grpc /tensorflow_src/tensorflow/cc/seed_rl/grpc
+WORKDIR /tensorflow_src/tensorflow/cc/seed_rl/grpc
+RUN bazel build $BUILD_FLAGS :grpc_cc.so :service_proto_py
+
+
+FROM tensorflow/tensorflow:devel-gpu-py3
+RUN pip3 uninstall -y tf-nightly tensorflow tensorflow-gpu tf-nightly-gpu
+RUN pip3 install --upgrade tf-nightly-gpu-2.0-preview
+RUN mkdir -p /seed_rl/grpc/
+COPY --from=grpc_compile /tensorflow_src/bazel-bin/tensorflow/cc/seed_rl/grpc/grpc_cc.so /seed_rl/grpc/grpc_cc.so
+COPY --from=grpc_compile /tensorflow_src/bazel-bin/tensorflow/cc/seed_rl/grpc/service_pb2.py /seed_rl/grpc/service_pb2.py
+
+ADD . /seed_rl/
+WORKDIR /seed_rl

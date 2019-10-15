@@ -60,6 +60,9 @@ flags.DEFINE_float('adam_epsilon', 1e-3, 'Adam epsilon.')
 
 flags.DEFINE_integer('task', 0, 'Task id.')
 flags.DEFINE_integer('num_actors', 4, 'Number of actors.')
+flags.DEFINE_integer('num_actors_with_summaries', 4,
+                     'Number of actors that will log debug/profiling TF '
+                     'summaries.')
 
 # Environment settings.
 flags.DEFINE_string('game', 'explore_goal_locations_small', 'Game/level name.')

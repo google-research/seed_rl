@@ -89,11 +89,13 @@ flags.DEFINE_float('learning_rate', 0.00048, 'Learning rate.')
 flags.DEFINE_float('adam_epsilon', 1e-3, 'Adam epsilon.')
 
 # ACTOR
-
 flags.DEFINE_integer('task', 0, 'Task id.')
 flags.DEFINE_integer('num_actors', 4,
                      'Total number of actors. The last --num_eval_actors will '
                      'be reserved for evaluation and not used for training.')
+flags.DEFINE_integer('num_actors_with_summaries', 4,
+                     'Number of actors that will log debug/profiling TF '
+                     'summaries.')
 
 # Environment settings.
 flags.DEFINE_string('game', 'Pong', 'Game name.')

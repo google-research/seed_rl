@@ -58,6 +58,9 @@ flags.DEFINE_float('learning_rate', 0.00048, 'Learning rate.')
 
 flags.DEFINE_integer('task', 0, 'Task id.')
 flags.DEFINE_integer('num_actors', 4, 'Number of actors.')
+flags.DEFINE_integer('num_actors_with_summaries', 4,
+                     'Number of actors that will log debug/profiling TF '
+                     'summaries.')
 
 # Environment settings.
 flags.DEFINE_string('game', '11_vs_11_easy_stochastic', 'Game/scenario name.')

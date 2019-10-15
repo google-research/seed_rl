@@ -15,6 +15,7 @@
 """Utility functions/classes."""
 
 import collections
+import contextlib
 
 from absl import logging
 
@@ -601,3 +602,10 @@ def split_structure(structure, prefix_length):
   flattened_suffix = [pair[1] for pair in split]
   return (tf.nest.pack_sequence_as(structure, flattened_prefix),
           tf.nest.pack_sequence_as(structure, flattened_suffix))
+
+
+@contextlib.contextmanager
+def nullcontext(*args, **kwds):
+  del args  # unused
+  del kwds  # unused
+  yield None

@@ -21,18 +21,19 @@ However, any reinforcement learning environment using the [gym
 API](https://github.com/openai/gym/blob/master/gym/core.py) can be used.
 
 For a detailed description of the architecture please read
-[our paper](https://arxiv.org/abs/XXX).
+[our paper](https://arxiv.org/abs/1910.06591).
 Please cite the paper if you use the code from this repository in your work.
 
 ### Bibtex
 
 ```
-@article{seed2019,
-  author    = {Lasse Espeholt and Rapha{\"e}l Marinier and Piotr Stanczyk and Ke Wang and Marcin Michalski},
-  title     = {{SEED RL:} Scalable and Efficient Deep-RL with Accelerated Central Inference},
-  year      = {2019},
-  url       = {http://arxiv.org/abs/xxx},
-  archivePrefix = {arXiv},
+@article{espeholt2019seed,
+    title={SEED RL: Scalable and Efficient Deep-RL with Accelerated Central Inference},
+    author={Lasse Espeholt and Rapha{\"e}l Marinier and Piotr Stanczyk and Ke Wang and Marcin Michalski},
+    year={2019},
+    eprint={1910.06591},
+    archivePrefix={arXiv},
+    primaryClass={cs.LG}
 }
 ```
 

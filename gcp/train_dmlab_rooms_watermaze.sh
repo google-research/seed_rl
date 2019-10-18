@@ -61,8 +61,8 @@ trainingInput:
       scaleType: UNIT_LOG_SCALE
     - parameterName: lambda_
       type: DOUBLE
-      minValue: 1.0
-      maxValue: 1.0
+      minValue: 0.99
+      maxValue: 0.99
       scaleType: UNIT_LOG_SCALE
     - parameterName: learning_rate
       type: DOUBLE
@@ -71,8 +71,8 @@ trainingInput:
       scaleType: UNIT_LOG_SCALE
     - parameterName: adam_epsilon
       type: DOUBLE
-      minValue: 0.1
-      maxValue: 0.1
+      minValue: 0.001
+      maxValue: 0.001
       scaleType: UNIT_LOG_SCALE
 EOF
 

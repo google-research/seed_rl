@@ -112,3 +112,23 @@ across multiple experiments.
 For AI Platform you can add
 ```--level_cache_dir=gs://${BUCKET_NAME}/dmlab_cache```
 to the list of parameters passed in ```gcp/submit.sh``` to the experiment.
+
+
+## Baseline data
+
+We provide baseline training data for SEED's R2D2 trained on ATARI games in the
+form of training curves (checkpoints and Tensorboard event files coming soon).
+We provide data for 4 independent seeds run up to 40e9 environment frames.
+
+The hyperparameters and evaluation procedure are the same as in section A.3.1 in
+the [paper](https://arxiv.org/pdf/1910.06591.pdf).
+
+
+### Training curves on ATARI-57
+
+Training curves are available on [this
+page](https://github.com/google-research/seed_rl/tree/master/docs/r2d2_atari_training_curves.md).
+
+### Checkpoints and Tensorboard event files
+
+Coming soon.

@@ -12,26 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Environment test."""
 
-import os
+"""Flags common across learners and actors.
+"""
 
 from absl import flags
-from seed_rl.dmlab import env
-import tensorflow as tf
-import deepmind_lab
 
-FLAGS = flags.FLAGS
-
-
-class EnvironmentTest(tf.test.TestCase):
-
-  def test_run_step(self):
-    environment = env.create_environment(0)
-    environment.reset()
-    environment.step(0)
-    environment.close()
+flags.DEFINE_string('logdir', '/tmp/agent', 'TensorFlow log directory.')
+flags.DEFINE_alias('job-dir', 'logdir')
+flags.DEFINE_string('server_address', 'localhost:8686', 'Server address.')
 
 
-if __name__ == '__main__':
-  tf.test.main()
+flags.DEFINE_enum(
+    'run_mode', None, ['learner', 'actor'],
+    'Whether we run the learner or the actor. Each actor runs the environment '
+    'and sends to the learner each env observation and receives the action to '
+    'play. A learner performs policy inference for batches of observations '
+    'coming from multiple actors, and use the generated trajectories to learn.')

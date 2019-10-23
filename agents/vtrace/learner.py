@@ -13,19 +13,18 @@
 # limitations under the License.
 
 # python3
-"""SEED learner for DeepMind Lab."""
+"""V-trace based SEED learner."""
 
 import collections
 import concurrent.futures
 import math
 import time
 
-from absl import app
 from absl import flags
 from absl import logging
 
 from seed_rl import grpc
-from seed_rl.dmlab import config
+from seed_rl.common import common_flags  
 from seed_rl.utils import losses
 from seed_rl.utils import utils
 from seed_rl.utils import vtrace
@@ -34,6 +33,28 @@ import tensorflow as tf
 
 
 
+
+# Training.
+flags.DEFINE_integer('save_checkpoint_secs', 1800,
+                     'Checkpoint save period in seconds.')
+flags.DEFINE_integer('total_environment_frames', int(1e9),
+                     'Total environment frames to train for.')
+flags.DEFINE_integer('batch_size', 2, 'Batch size for training.')
+flags.DEFINE_integer('inference_batch_size', 2, 'Batch size for inference.')
+flags.DEFINE_integer('unroll_length', 100, 'Unroll length in agent steps.')
+flags.DEFINE_integer('num_training_tpus', 1, 'Number of TPUs for training.')
+
+# Loss settings.
+flags.DEFINE_float('entropy_cost', 0.00025, 'Entropy cost/multiplier.')
+flags.DEFINE_float('baseline_cost', .5, 'Baseline cost/multiplier.')
+flags.DEFINE_float('discounting', .99, 'Discounting factor.')
+flags.DEFINE_float('lambda_', 1., 'Lambda.')
+flags.DEFINE_float('max_abs_reward', 1.,
+                   'Maximum absolute reward when calculating loss.'
+                   'Use 0. to disable clipping.')
+
+# Actors
+flags.DEFINE_integer('num_actors', 4, 'Number of actors.')
 
 
 FLAGS = flags.FLAGS
@@ -95,12 +116,29 @@ def validate_config():
       'Inference batch size is bigger than the number of actors.')
 
 
-def main(_):
+def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
+  """Main learner loop.
+
+  Args:
+    create_env_fn: Callable that must return a newly created environment. The
+      callable takes the task ID as argument - an arbitrary task ID of 0 will be
+      passed by the learner. The returned environment should follow GYM's API.
+      It is only used for infering tensor shapes. This environment will not be
+      used to generate experience.
+    create_agent_fn: Function that must create a new tf.Module with the neural
+      network that outputs actions and new agent state given the environment
+      observations and previous agent state. See dmlab.agents.ImpalaDeep for an
+      example. The factory function takes as input the environment output specs
+      and the number of possible actions in the env.
+    create_optimizer_fn: Function that takes the final iteration as argument
+      and must return a tf.keras.optimizers.Optimizer and a
+      tf.keras.optimizers.schedules.LearningRateSchedule.
+  """
+  logging.info('Starting learner loop')
   validate_config()
   settings = utils.init_learner(FLAGS.num_training_tpus)
   strategy, inference_devices, training_strategy, encode, decode = settings
-  # Environment specification.
-  env = config.create_environment(0)
+  env = create_env_fn(0)
   env_output_specs = utils.EnvOutput(
       tf.TensorSpec([], tf.float32, 'reward'),
       tf.TensorSpec([], tf.bool, 'done'),
@@ -112,7 +150,7 @@ def main(_):
   agent_input_specs = (action_specs, env_output_specs)
 
   # Initialize agent and variables.
-  agent = config.create_agent(env_output_specs, num_actions)
+  agent = create_agent_fn(env_output_specs, num_actions)
   initial_agent_state = agent.initial_state(1)
   agent_state_specs = tf.nest.map_structure(
       lambda t: tf.TensorSpec(t.shape[1:], t.dtype), initial_agent_state)
@@ -131,7 +169,7 @@ def main(_):
         FLAGS.batch_size * FLAGS.unroll_length * FLAGS.num_action_repeats)
     final_iteration = int(
         math.ceil(FLAGS.total_environment_frames / iter_frame_ratio))
-    optimizer, learning_rate_fn = config.create_optimizer(final_iteration)
+    optimizer, learning_rate_fn = create_optimizer_fn(final_iteration)
 
 
     iterations = optimizer.iterations
@@ -355,7 +393,3 @@ def main(_):
   manager.save()
   server.shutdown()
   unroll_queue.close()
-
-
-if __name__ == '__main__':
-  app.run(main)

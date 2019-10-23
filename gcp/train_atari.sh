@@ -18,7 +18,9 @@ set -e
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 source $DIR/setup.sh
 
+export ENVIRONMENT=atari
 export CONFIG=atari
+export AGENT=r2d2
 export WORKERS=32
 export ACTORS_PER_WORKER=20
 

@@ -33,14 +33,68 @@ import concurrent.futures
 import math
 import time
 
-from absl import app
 from absl import flags
 from absl import logging
 from seed_rl import grpc
-from seed_rl.atari import config
+from seed_rl.common import common_flags  
 from seed_rl.utils import utils
 import tensorflow as tf
 
+flags.DEFINE_integer('save_checkpoint_secs', 1800,
+                     'Checkpoint save period in seconds.')
+flags.DEFINE_integer('total_environment_frames', int(1e9),
+                     'Total environment frames to train for.')
+flags.DEFINE_integer('batch_size', 2, 'Batch size for training.')
+flags.DEFINE_float('replay_ratio', 1.5,
+                   'Average number of times each observation is replayed and '
+                   'used for training. '
+                   'The default of 1.5 corresponds to an interpretation of the '
+                   'R2D2 paper using the end of section 2.3.')
+flags.DEFINE_integer('inference_batch_size', 2, 'Batch size for inference.')
+flags.DEFINE_integer('unroll_length', 100, 'Unroll length in agent steps.')
+flags.DEFINE_integer('num_training_tpus', 1, 'Number of TPUs for training.')
+flags.DEFINE_integer('update_target_every_n_step',
+                     2500,
+                     'Update the target network at this frequency (expressed '
+                     'in number of training steps)')
+flags.DEFINE_integer('replay_buffer_size', 100,
+                     'Size of the replay buffer (in number of unrolls stored).')
+flags.DEFINE_integer('replay_buffer_min_size', 10,
+                     'Learning only starts when there is at least this number '
+                     'of unrolls in the replay buffer')
+flags.DEFINE_float('priority_exponent', 0.9,
+                   'Priority exponent used when sampling in the replay buffer. '
+                   '0.9 comes from R2D2 paper, table 2.')
+flags.DEFINE_integer('unroll_queue_max_size', 100,
+                     'Max size of the unroll queue')
+flags.DEFINE_integer('burn_in', 40,
+                     'Length of the RNN burn-in prefix. This is the number of '
+                     'time steps on which we update each stored RNN state '
+                     'before computing the actual loss. The effective length '
+                     'of unrolls will be burn_in + unroll_length, and two '
+                     'consecutive unrolls will overlap on burn_in steps.')
+flags.DEFINE_float('importance_sampling_exponent', 0.6,
+                   'Exponent used when computing the importance sampling '
+                   'correction. 0 means no importance sampling correction. '
+                   '1 means full importance sampling correction.')
+flags.DEFINE_float('clip_norm', 40, 'We clip gradient norm to this value.')
+flags.DEFINE_float('value_function_rescaling_epsilon', 1e-3,
+                   'Epsilon used for value function rescaling.')
+flags.DEFINE_integer('n_steps', 5,
+                     'n-step returns: how far ahead we look for computing the '
+                     'Bellman targets.')
+flags.DEFINE_float('discounting', .997, 'Discounting factor.')
+
+# Eval settings
+flags.DEFINE_float('eval_epsilon', 1e-3,
+                   'Epsilon (as in epsilon-greedy) used for evaluation.')
+flags.DEFINE_integer('num_eval_actors', 2,
+                     'Number of actors whose transitions will be used for '
+                     'eval.')
+
+flags.DEFINE_integer('num_actors', 4,
+                     'Total number of actors. The last --num_eval_actors will '
+                     'be reserved for evaluation and not used for training.')
 
 FLAGS = flags.FLAGS
 
@@ -430,12 +484,29 @@ def validate_config():
           FLAGS.num_actors, FLAGS.num_eval_actors))
 
 
-def main(_):
+def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
+  """Main learner loop.
+
+  Args:
+    create_env_fn: Callable that must return a newly created environment. The
+      callable takes the task ID as argument - an arbitrary task ID of 0 will be
+      passed by the learner. The returned environment should follow GYM's API.
+      It is only used for infering tensor shapes. This environment will not be
+      used to generate experience.
+    create_agent_fn: Function that must create a new tf.Module with the neural
+      network that outputs actions and new agent state given the environment
+      observations and previous agent state. See dmlab.agents.ImpalaDeep for an
+      example. The factory function takes as input the environment output specs
+      and the number of possible actions in the env.
+    create_optimizer_fn: Function that takes the final iteration as argument
+      and must return a tf.keras.optimizers.Optimizer and a
+      tf.keras.optimizers.schedules.LearningRateSchedule.
+  """
+  logging.info('Starting learner loop')
   validate_config()
   settings = utils.init_learner(FLAGS.num_training_tpus)
   strategy, inference_devices, training_strategy, encode, decode = settings
-  # Environment specification.
-  env = config.create_environment(0)
+  env = create_env_fn(0)
   env_output_specs = utils.EnvOutput(
       tf.TensorSpec([], tf.float32, 'reward'),
       tf.TensorSpec([], tf.bool, 'done'),
@@ -447,8 +518,8 @@ def main(_):
   agent_input_specs = (action_specs, env_output_specs)
 
   # Initialize agent and variables.
-  agent = config.create_agent(env_output_specs, num_actions)
-  target_agent = config.create_agent(env_output_specs, num_actions)
+  agent = create_agent_fn(env_output_specs, num_actions)
+  target_agent = create_agent_fn(env_output_specs, num_actions)
   initial_agent_state = agent.initial_state(1)
   agent_state_specs = tf.nest.map_structure(
       lambda t: tf.TensorSpec(t.shape[1:], t.dtype), initial_agent_state)
@@ -487,7 +558,7 @@ def main(_):
         FLAGS.unroll_length * FLAGS.num_action_repeats)
     final_iteration = int(
         math.ceil(FLAGS.total_environment_frames / iter_frame_ratio))
-    optimizer, learning_rate_fn = config.create_optimizer(final_iteration)
+    optimizer, learning_rate_fn = create_optimizer_fn(final_iteration)
 
 
     iterations = optimizer.iterations
@@ -832,7 +903,3 @@ def main(_):
   manager.save()
   server.shutdown()
   unroll_queue.close()
-
-
-if __name__ == '__main__':
-  app.run(main)

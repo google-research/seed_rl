@@ -18,6 +18,7 @@ import hashlib
 import os
 
 from absl import flags
+from absl import logging
 
 import gym
 import numpy as np
@@ -32,6 +33,12 @@ flags.DEFINE_string('homepath', '', 'Labyrinth homepath.')
 flags.DEFINE_string(
     'dataset_path', '', 'Path to dataset needed for psychlab_*, see '
     'https://github.com/deepmind/lab/tree/master/data/brady_konkle_oliva2008')
+
+flags.DEFINE_string('game', 'explore_goal_locations_small', 'Game/level name.')
+flags.DEFINE_integer('width', 96, 'Width of observation.')
+flags.DEFINE_integer('height', 72, 'Height of observation.')
+flags.DEFINE_integer('num_action_repeats', 4, 'Number of action repeats.')
+flags.DEFINE_string('level_cache_dir', None, 'Global level cache directory.')
 
 
 DEFAULT_ACTION_SET = (
@@ -123,3 +130,17 @@ class DmLab(gym.Env):
 
   def close(self):
     self._env.close()
+
+
+def create_environment(task):
+  logging.info('Creating environment: %s', FLAGS.game)
+  return DmLab(FLAGS.game,
+               FLAGS.num_action_repeats,
+               seed=task + 1,
+               is_test=False,
+               level_cache_dir=FLAGS.level_cache_dir,
+               config={
+                   'width': FLAGS.width,
+                   'height': FLAGS.height,
+                   'logLevel': 'WARN',
+               })

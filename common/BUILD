@@ -16,38 +16,27 @@ licenses(["notice"])
 exports_files(["LICENSE"])
 
 py_library(
-    name = "lib",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = [
-            "*_test.py",
-        ],
-    ),
-    visibility = ["//visibility:public"],
+    name = "actor",
+    srcs = ["actor.py"],
+    srcs_version = "PY3",
+    visibility = ["//tensorflow/cc/seed_rl:__subpackages__"],
     deps = [
+        ":common_flags",
+        "//third_party/py/absl/flags",
+        "//third_party/py/absl/logging",
         "//third_party/py/numpy",
         "//tensorflow/cc/seed_rl:utils",
         "//tensorflow/cc/seed_rl/grpc",
+        "//third_party/py/tensorflow:tensorflow_google",
     ],
 )
 
-py_binary(
-    name = "vtrace_main",
-    srcs = ["vtrace_main.py"],
-    python_version = "PY3",
+py_library(
+    name = "common_flags",
+    srcs = ["common_flags.py"],
+    srcs_version = "PY3",
+    visibility = ["//tensorflow/cc/seed_rl:__subpackages__"],
     deps = [
-        ":lib",
-        "//tensorflow/cc/seed_rl/agents/vtrace:learner",
-        "//tensorflow/cc/seed_rl/common:actor",
-    ],
-)
-
-py_test(
-    name = "environment_test",
-    srcs = ["environment_test.py"],
-    python_version = "PY3",
-    deps = [
-        ":lib",
-        "//tensorflow:tensorflow_py",
+        "//third_party/py/absl/flags",
     ],
 )

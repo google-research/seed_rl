@@ -1,4 +1,3 @@
-#!/bin/bash
 # Copyright 2019 The SEED Authors
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +11,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+licenses(["notice"])
 
+exports_files(["LICENSE"])
 
-pgrep -f "seed_rl/.*(actor|learner)" | xargs kill -9 2> /dev/null
-tmux kill-session -t seed_rl
+py_library(
+    name = "learner",
+    srcs = ["learner.py"],
+    srcs_version = "PY3",
+    visibility = ["//tensorflow/cc/seed_rl:__subpackages__"],
+    deps = [
+        "//third_party/py/absl/flags",
+        "//third_party/py/absl/logging",
+        "//tensorflow/cc/seed_rl:utils",
+        "//tensorflow/cc/seed_rl/common:common_flags",
+        "//tensorflow/cc/seed_rl/grpc",
+        "//third_party/py/tensorflow:tensorflow_google",
+    ],
+)

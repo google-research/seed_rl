@@ -19,6 +19,8 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 source $DIR/setup.sh
 
 export CONFIG=football
+export ENVIRONMENT=football
+export AGENT=vtrace
 export WORKERS=25
 export ACTORS_PER_WORKER=8
 
@@ -48,11 +50,6 @@ trainingInput:
       type: CATEGORICAL
       categoricalValues:
       - scoring
-    - parameterName: seed
-      type: INTEGER
-      minValue: 0
-      maxValue: 0
-      scaleType: UNIT_LINEAR_SCALE
     - parameterName: inference_batch_size
       type: INTEGER
       minValue: 64

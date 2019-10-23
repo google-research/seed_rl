@@ -24,18 +24,25 @@ from absl import flags
 from absl import logging
 import concurrent.futures
 
-flags.DEFINE_string('config', 'football', 'Config to run.')
+flags.DEFINE_string('environment', 'football', 'Environment to run.')
+flags.DEFINE_string('agent', 'vtrace', 'Agent to run.')
 flags.DEFINE_integer('workers', 1, 'Number of workers.')
 flags.DEFINE_integer('actors_per_worker', 1,
                      'Number of actors to run on a single worker.')
 FLAGS = flags.FLAGS
 
 
-def run_learner(executor, directory, config):
+def get_py_main():
+  return os.path.join('/seed_rl', FLAGS.environment,
+                      FLAGS.agent + '_main.py')
+
+
+def run_learner(executor, config):
   """Runs learner job using executor."""
   _, master_port = config.get('cluster').get('master')[0].split(':', 1)
   args = [
-      'python', directory + 'learner.py',
+      'python', get_py_main(),
+      '--run_mode=learner',
       '--server_address=[::]:{}'.format(master_port),
       '--num_actors={}'.format(FLAGS.workers * FLAGS.actors_per_worker)
   ]
@@ -44,11 +51,12 @@ def run_learner(executor, directory, config):
   return executor.submit(subprocess.check_call, args)
 
 
-def run_actor(executor, directory, config, actor_id):
+def run_actor(executor, config, actor_id):
   """Runs actor job using executor."""
   master_addr = config.get('cluster').get('master')[0]
   args = [
-      'python', directory + 'actor.py',
+      'python', get_py_main(),
+      '--run_mode=actor',
       '--server_address={}'.format(master_addr),
       '--num_actors={}'.format(FLAGS.workers * FLAGS.actors_per_worker)
   ]
@@ -72,13 +80,12 @@ def main(_):
   executor = concurrent.futures.ThreadPoolExecutor(
       max_workers=FLAGS.actors_per_worker)
   futures = []
-  directory = '/seed_rl/{}/'.format(FLAGS.config)
   if job_type == 'master':
-    futures.append(run_learner(executor, directory, config))
+    futures.append(run_learner(executor, config))
   else:
     assert job_type == 'worker', 'Unexpected task type: {}'.format(job_type)
     for actor_id in range(FLAGS.actors_per_worker):
-      futures.append(run_actor(executor, directory, config, actor_id))
+      futures.append(run_actor(executor, config, actor_id))
   for f in futures:
     f.result()
 

@@ -16,50 +16,29 @@ licenses(["notice"])
 exports_files(["LICENSE"])
 
 py_library(
-    name = "lib",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = [
-            "*_test.py",
-        ],
-    ),
-    visibility = ["//visibility:public"],
+    name = "learner",
+    srcs = ["learner.py"],
+    srcs_version = "PY3",
+    visibility = ["//tensorflow/cc/seed_rl:__subpackages__"],
     deps = [
-        "//third_party/py/numpy",
+        "//third_party/py/absl/flags",
+        "//third_party/py/absl/logging",
         "//tensorflow/cc/seed_rl:utils",
+        "//tensorflow/cc/seed_rl/common:common_flags",
         "//tensorflow/cc/seed_rl/grpc",
-    ],
-)
-
-py_binary(
-    name = "r2d2_main",
-    srcs = ["r2d2_main.py"],
-    python_version = "PY3",
-    deps = [
-        ":lib",
-        "//tensorflow/cc/seed_rl/agents/r2d2:learner",
-        "//tensorflow/cc/seed_rl/common:actor",
+        "//third_party/py/tensorflow:tensorflow_google",
     ],
 )
 
 py_test(
-    name = "environment_test",
-    srcs = ["environment_test.py"],
+    name = "learner_test",
+    srcs = ["learner_test.py"],
     python_version = "PY3",
     deps = [
-        ":lib",
-        "//tensorflow:tensorflow_py",
-    ],
-)
-
-py_test(
-    name = "agents_test",
-    srcs = ["agents_test.py"],
-    python_version = "PY3",
-    deps = [
-        ":lib",
-        "//tensorflow:tensorflow_py",
+        ":learner",
         "//third_party/py/numpy",
         "//tensorflow/cc/seed_rl:utils",
+        "//tensorflow/cc/seed_rl/atari:lib",
+        "//third_party/py/tensorflow",
     ],
 )

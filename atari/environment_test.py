@@ -17,7 +17,7 @@
 import os
 
 from absl import flags
-from seed_rl.atari import config
+from seed_rl.atari import env
 import tensorflow as tf
 
 FLAGS = flags.FLAGS
@@ -26,10 +26,10 @@ FLAGS = flags.FLAGS
 class EnvironmentTest(tf.test.TestCase):
 
   def test_run_step(self):
-    env = config.create_environment(FLAGS.task)
-    env.reset()
-    env.step(0)
-    env.close()
+    environment = env.create_environment(0)
+    environment.reset()
+    environment.step(0)
+    environment.close()
 
 
 if __name__ == '__main__':

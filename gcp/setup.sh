@@ -30,6 +30,6 @@ start_training () {
     --job-dir gs://seed_rl/${JOB_NAME} \
     --region us-central1 \
     --config /tmp/config.yaml \
-    --stream-logs -- --config=${CONFIG} \
+    --stream-logs -- --environment=${ENVIRONMENT} --agent=${AGENT} \
     --actors_per_worker=${ACTORS_PER_WORKER} --workers=${WORKERS} --
 }

@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-r"""Actor task which uses Google Research Football as RL-environment."""
+r"""SEED actor."""
 
 import os
-from absl import app
+
 from absl import flags
 from absl import logging
 import numpy as np
 from seed_rl import grpc
-from seed_rl.football import config
+from seed_rl.common import common_flags  
 from seed_rl.utils import profiling
 from seed_rl.utils import utils
 import tensorflow as tf
@@ -28,12 +28,24 @@ import tensorflow as tf
 
 FLAGS = flags.FLAGS
 
+flags.DEFINE_integer('task', 0, 'Task id.')
+flags.DEFINE_integer('num_actors_with_summaries', 4,
+                     'Number of actors that will log debug/profiling TF '
+                     'summaries.')
+
 
 def are_summaries_enabled():
   return FLAGS.task < FLAGS.num_actors_with_summaries
 
 
-def main(_):
+def actor_loop(create_env_fn):
+  """Main actor loop.
+
+  Args:
+    create_env_fn: Callable (taking the task ID as argument) that must return a
+      newly created environment.
+  """
+  logging.info('Starting actor loop')
   if are_summaries_enabled():
     summary_writer = tf.summary.create_file_writer(
         os.path.join(FLAGS.logdir, 'actor_{}'.format(FLAGS.task)),
@@ -50,7 +62,7 @@ def main(_):
         # Client to communicate with the learner.
         client = grpc.Client(FLAGS.server_address)
 
-        env = config.create_environment(FLAGS.task)
+        env = create_env_fn(FLAGS.task)
 
         # Unique ID to identify a specific run of an actor.
         run_id = np.random.randint(np.iinfo(np.int64).max)
@@ -61,7 +73,7 @@ def main(_):
 
         while True:
           tf.summary.experimental.set_step(actor_step)
-          env_output = utils.EnvOutput(reward, done, np.array(observation))
+          env_output = utils.EnvOutput(reward, done, observation)
           with timer_cls('actor/elapsed_inference_s', 1000):
             action = client.inference(
                 (FLAGS.task, run_id, env_output, raw_reward))
@@ -75,7 +87,3 @@ def main(_):
       except (tf.errors.UnavailableError, tf.errors.CancelledError) as e:
         logging.exception(e)
         env.close()
-
-
-if __name__ == '__main__':
-  app.run(main)

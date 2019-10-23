@@ -31,28 +31,23 @@ py_library(
     ],
 )
 
+py_binary(
+    name = "vtrace_main",
+    srcs = ["vtrace_main.py"],
+    python_version = "PY3",
+    deps = [
+        ":lib",
+        "//tensorflow/cc/seed_rl/agents/vtrace:learner",
+        "//tensorflow/cc/seed_rl/common:actor",
+    ],
+)
+
 py_library(
     name = "observation",
     srcs = [
         "observation.py",
     ],
     deps = ["//third_party/py/numpy"],
-)
-
-py_binary(
-    name = "learner",
-    srcs = ["learner.py"],
-    python_version = "PY3",
-    deps = [":lib"],
-)
-
-py_binary(
-    name = "actor",
-    srcs = ["actor.py"],
-    python_version = "PY3",
-    deps = [
-        ":lib",
-    ],
 )
 
 py_test(

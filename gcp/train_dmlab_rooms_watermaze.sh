@@ -19,6 +19,8 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 source $DIR/setup.sh
 
 export CONFIG=dmlab
+export ENVIRONMENT=dmlab
+export AGENT=vtrace
 export WORKERS=50
 export ACTORS_PER_WORKER=8
 

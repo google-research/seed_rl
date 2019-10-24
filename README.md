@@ -114,7 +114,7 @@ For AI Platform you can add
 to the list of parameters passed in ```gcp/submit.sh``` to the experiment.
 
 
-## Baseline data
+## Baseline data on ATARI-57
 
 We provide baseline training data for SEED's R2D2 trained on ATARI games in the
 form of training curves (checkpoints and Tensorboard event files coming soon).
@@ -124,11 +124,14 @@ The hyperparameters and evaluation procedure are the same as in section A.3.1 in
 the [paper](https://arxiv.org/pdf/1910.06591.pdf).
 
 
-### Training curves on ATARI-57
+### Training curves
 
 Training curves are available on [this
 page](https://github.com/google-research/seed_rl/tree/master/docs/r2d2_atari_training_curves.md).
 
 ### Checkpoints and Tensorboard event files
 
-Coming soon.
+Checkpoints and tensorboard event files can be downloaded individually
+[here](https://console.cloud.google.com/storage/browser/seed_rl_external_data_release)
+or as [a single (70GBs) zip
+file](https://storage.cloud.google.com/seed_rl_external_data_release/seed_r2d2_atari_checkpoints.zip).

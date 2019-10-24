@@ -2,8 +2,8 @@
 
 Below are training curves for SEED's R2D2 on Atari-57. We trained on 4 seeds up
 to 40e9 frames. The curves represent the mean undiscounted returns over the 4
-seeds. The shaded area around the curves represent a 95% confidence interval for
-the mean computed using bootstrapping.
+seeds. The shaded area around the curves represents a 95% confidence interval
+for the mean computed using bootstrapping.
 
 The hyperparameters and evaluation procedure are the same as in section A.3.1 in
 the [paper](https://arxiv.org/pdf/1910.06591.pdf). We highlight that we use up

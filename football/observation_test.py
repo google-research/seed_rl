@@ -24,11 +24,13 @@ import tensorflow as tf
 
 class UtilsTest(tf.test.TestCase, parameterized.TestCase):
 
-  @parameterized.parameters((False, False), (False, True),
-                            (True, False), (True, True),)
-  def test_packed_bits(self, stacked, enable_sides_swap):
-    env = gym.make('gfootball:GFootball-11_vs_11_easy_stochastic-SMM-v0',
-                   stacked=stacked, enable_sides_swap=enable_sides_swap)
+  @parameterized.parameters(
+      (False),
+      (True),
+  )
+  def test_packed_bits(self, stacked):
+    env = gym.make(
+        'gfootball:GFootball-11_vs_11_easy_stochastic-SMM-v0', stacked=stacked)
     env.reset()
     for _ in range(10):
       obs, _, done, _ = env.step(env.action_space.sample())

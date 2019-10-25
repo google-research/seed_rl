@@ -20,7 +20,6 @@ exports_files(["LICENSE"])
 py_library(
     name = "utils",
     srcs = glob(["utils/*.py"]),
-    visibility = ["//visibility:public"],
     deps = [
         "//tensorflow:tensorflow_py",
         "//tensorflow/compiler/jit:xla_cpu_jit",

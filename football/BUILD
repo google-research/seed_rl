@@ -26,7 +26,7 @@ py_library(
     deps = [
         ":observation",
         "//third_party/py/numpy",
-        "//tensorflow/cc/seed_rl:utils",
+        "//tensorflow/cc/seed_rl/common",
         "//tensorflow/cc/seed_rl/grpc",
     ],
 )
@@ -70,6 +70,6 @@ py_test(
         ":observation",
         "//tensorflow:tensorflow_py",
         "//third_party/py/numpy",
-        "//tensorflow/cc/seed_rl:utils",
+        "//tensorflow/cc/seed_rl/common",
     ],
 )

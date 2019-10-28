@@ -20,7 +20,7 @@ from __future__ import print_function
 
 import unittest.mock as mock
 from seed_rl.atari import agents
-from seed_rl.utils import utils
+from seed_rl.common import utils
 import tensorflow as tf
 
 OBS_DIM = 84

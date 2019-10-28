@@ -37,7 +37,7 @@ from absl import flags
 from absl import logging
 from seed_rl import grpc
 from seed_rl.common import common_flags  
-from seed_rl.utils import utils
+from seed_rl.common import utils
 import tensorflow as tf
 
 flags.DEFINE_integer('save_checkpoint_secs', 1800,

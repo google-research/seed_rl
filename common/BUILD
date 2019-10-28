@@ -25,7 +25,7 @@ py_library(
         "//third_party/py/absl/flags",
         "//third_party/py/absl/logging",
         "//third_party/py/numpy",
-        "//tensorflow/cc/seed_rl:utils",
+        "//tensorflow/cc/seed_rl/common",
         "//tensorflow/cc/seed_rl/grpc",
         "//third_party/py/tensorflow:tensorflow_google",
     ],
@@ -38,5 +38,25 @@ py_library(
     visibility = ["//tensorflow/cc/seed_rl:__subpackages__"],
     deps = [
         "//third_party/py/absl/flags",
+    ],
+)
+
+py_library(
+    name = "common",
+    srcs = glob(
+        ["*.py"],
+        exclude = [
+            "*_test.py",
+            "actor.py",
+        ],
+    ),
+    visibility = [
+        "//learning/brain/research/dune:__subpackages__",
+        "//tensorflow/cc/seed_rl:__subpackages__",
+        "//visibility:public",
+    ],
+    deps = [
+        "//tensorflow/compiler/jit:xla_cpu_jit",
+        "//third_party/py/tensorflow",
     ],
 )

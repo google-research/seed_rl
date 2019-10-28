@@ -23,7 +23,7 @@ py_library(
     deps = [
         "//third_party/py/absl/flags",
         "//third_party/py/absl/logging",
-        "//tensorflow/cc/seed_rl:utils",
+        "//tensorflow/cc/seed_rl/common",
         "//tensorflow/cc/seed_rl/common:common_flags",
         "//tensorflow/cc/seed_rl/grpc",
         "//third_party/py/tensorflow:tensorflow_google",

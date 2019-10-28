@@ -26,7 +26,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//third_party/py/numpy",
-        "//tensorflow/cc/seed_rl:utils",
+        "//tensorflow/cc/seed_rl/common",
         "//tensorflow/cc/seed_rl/grpc",
     ],
 )

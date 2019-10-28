@@ -17,15 +17,6 @@ licenses(["notice"])
 
 exports_files(["LICENSE"])
 
-py_library(
-    name = "utils",
-    srcs = glob(["utils/*.py"]),
-    deps = [
-        "//tensorflow:tensorflow_py",
-        "//tensorflow/compiler/jit:xla_cpu_jit",
-    ],
-)
-
 py_test(
     name = "vtrace_test",
     srcs = [
@@ -33,9 +24,9 @@ py_test(
     ],
     python_version = "PY3",
     deps = [
-        ":utils",
         "//tensorflow:tensorflow_py",
         "//third_party/py/numpy",
+        "//tensorflow/cc/seed_rl/common",
     ],
 )
 
@@ -46,8 +37,8 @@ py_test(
     ],
     python_version = "PY3",
     deps = [
-        ":utils",
         "//tensorflow:tensorflow_py",
+        "//tensorflow/cc/seed_rl/common",
     ],
 )
 
@@ -59,7 +50,7 @@ py_test(
     python_version = "PY3",
     deps = [
         "//tensorflow:tensorflow_py",
-        "//tensorflow/cc/seed_rl:utils",
+        "//tensorflow/cc/seed_rl/common",
         "//tensorflow/cc/seed_rl/dmlab:lib",
     ],
 )

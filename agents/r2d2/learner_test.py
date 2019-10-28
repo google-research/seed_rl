@@ -18,7 +18,7 @@ from absl import flags
 import numpy as np
 from seed_rl.agents.r2d2 import learner
 from seed_rl.atari import agents
-from seed_rl.utils import utils
+from seed_rl.common import utils
 import tensorflow as tf
 
 

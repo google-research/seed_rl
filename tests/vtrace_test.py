@@ -23,7 +23,7 @@ by Espeholt, Soyer, Munos et al.
 
 from absl.testing import parameterized
 import numpy as np
-from seed_rl.utils import vtrace
+from seed_rl.common import vtrace
 import tensorflow as tf
 
 

@@ -494,10 +494,11 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
       It is only used for infering tensor shapes. This environment will not be
       used to generate experience.
     create_agent_fn: Function that must create a new tf.Module with the neural
-      network that outputs actions and new agent state given the environment
-      observations and previous agent state. See dmlab.agents.ImpalaDeep for an
-      example. The factory function takes as input the environment output specs
-      and the number of possible actions in the env.
+      network that outputs actions, Q values and new agent state given the
+      environment observations and previous agent state. See
+      atari.agents.DuelingLSTMDQNNet for an example. The factory function takes
+      as input the environment output specs and the number of possible actions
+      in the env.
     create_optimizer_fn: Function that takes the final iteration as argument
       and must return a tf.keras.optimizers.Optimizer and a
       tf.keras.optimizers.schedules.LearningRateSchedule.

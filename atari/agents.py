@@ -29,6 +29,25 @@ AgentState = collections.namedtuple(
 STACKING_STATE_DTYPE = tf.int32
 
 
+def initial_frame_stacking_state(batch_size, observation_shape):
+  """Returns the initial frame stacking state.
+
+  It should match what stack_frames accepts and produces.
+
+  Args:
+    batch_size: int tensor.
+    observation_shape: list, shape of a single observation, e.g.
+      [height, width, 1].
+
+  Returns:
+    <STACKING_STATE_DTYPE>[batch_size, prod(observation_shape)].
+  """
+  return tf.zeros(
+      tf.concat([[batch_size], [tf.math.reduce_prod(observation_shape)]],
+                axis=0),
+      dtype=STACKING_STATE_DTYPE)
+
+
 def stack_frames(frames, frame_stacking_state, done, stack_size):
   """Stacks frames.
 
@@ -38,11 +57,12 @@ def stack_frames(frames, frame_stacking_state, done, stack_size):
   Args:
     frames: <float32>[time, batch_size, height, width, 1]. These should be
       un-normalized frames in range [0, 255].
-    frame_stacking_state: If stack_size > 1, <int32>[batch_size, height, width].
+    frame_stacking_state: If stack_size > 1, <int32>[batch_size, height*width].
       () if stack_size=1.
       Frame are bit-packed. The LSBs correspond to the oldest frames, MSBs to
       newest. Frame stacking state contains un-normalized frames in range
-      [0, 256).
+      [0, 256). We use [height*width] for the observation shape instead of
+      [height, width] because it speeds up transfers to/from TPU by a factor ~2.
     done: <bool>[time, batch_size]
     stack_size: int, the number of frames to stack.
   Returns:
@@ -56,6 +76,8 @@ def stack_frames(frames, frame_stacking_state, done, stack_size):
     raise ValueError(
         'Expected same first 2 dims for frames and dones. Got {} vs {}.'.format(
             frames.shape[0:2], done.shape[0:2]))
+  batch_size = frames.shape[1]
+  obs_shape = frames.shape[2:-1]
   if stack_size > 4:
     raise ValueError('Only up to stack size 4 is supported due to bit-packing.')
   if stack_size == 1:
@@ -64,6 +86,10 @@ def stack_frames(frames, frame_stacking_state, done, stack_size):
     raise ValueError('Expected dtype {} got {}'.format(
         STACKING_STATE_DTYPE, frame_stacking_state[0].dtype))
 
+  frame_stacking_state = tf.reshape(
+      frame_stacking_state, [batch_size] + obs_shape)
+
+  # Unpacked 'frame_stacking_state'. Ordered from oldest to most recent.
   unstacked_state = []
   for i in range(stack_size - 1):
     # [batch_size, height, width]
@@ -131,6 +157,9 @@ def stack_frames(frames, frame_stacking_state, done, stack_size):
       [8 * i for i in range(stack_size - 2, -1, -1)])
   # This is really a reduce_or, because bits don't overlap.
   new_state = tf.reduce_sum(shifted, axis=-1)
+
+  new_state = tf.reshape(new_state, [batch_size, obs_shape.num_elements()])
+
   return stacked_frames, new_state
 
 
@@ -222,10 +251,8 @@ class DuelingLSTMDQNNet(tf.Module):
 
   def initial_state(self, batch_size):
     if self._stack_size > 1:
-      # [batch_size, height, width].
-      frame_stacking_state = tf.zeros(
-          tf.concat([[batch_size], self._observation_shape], axis=0)[:-1],
-          dtype=STACKING_STATE_DTYPE)
+      frame_stacking_state = initial_frame_stacking_state(
+          batch_size, self._observation_shape)
     else:
       frame_stacking_state = ()
     return AgentState(

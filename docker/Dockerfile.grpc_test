@@ -16,4 +16,4 @@ FROM $grpc_image
 
 ADD . .
 
-ENTRYPOINT ["bash", "-c", "for x in `find /seed_rl/grpc/ -name *_test.py`; do PYTHONPATH=/ python3 $x; done"]
+ENTRYPOINT ["bash", "-c", "set -e; for x in `find /seed_rl/grpc/ -name *_test.py`; do PYTHONPATH=/ python3 $x; done"]

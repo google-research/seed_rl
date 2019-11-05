@@ -38,9 +38,7 @@ Settings = collections.namedtuple(
 
 def init_learner(num_training_tpus):
   """Performs common learner initialization."""
-  any_tpu = any(
-      (d for d in tf.config.experimental_list_devices() if ':TPU:' in d))
-  if any_tpu:
+  if tf.config.list_logical_devices('TPU'):
     resolver = tf.distribute.cluster_resolver.TPUClusterResolver('')
     topology = tf.tpu.experimental.initialize_tpu_system(resolver)
     strategy = tf.distribute.experimental.TPUStrategy(resolver)
@@ -53,8 +51,7 @@ def init_learner(num_training_tpus):
                     tpu_decode)
   else:
     tf.device('/cpu').__enter__()
-    any_gpu = any(
-        (d for d in tf.config.experimental_list_devices() if ':GPU:' in d))
+    any_gpu = tf.config.list_logical_devices('GPU')
     device_name = '/device:GPU:0' if any_gpu else '/device:CPU:0'
     strategy = tf.distribute.OneDeviceStrategy(device=device_name)
     enc = lambda x: x

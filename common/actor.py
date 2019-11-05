@@ -76,7 +76,7 @@ def actor_loop(create_env_fn):
           env_output = utils.EnvOutput(reward, done, observation)
           with timer_cls('actor/elapsed_inference_s', 1000):
             action = client.inference(
-                (FLAGS.task, run_id, env_output, raw_reward))
+                FLAGS.task, run_id, env_output, raw_reward)
           with timer_cls('actor/elapsed_env_step_s', 1000):
             observation, reward, done, info = env.step(action.numpy())
           raw_reward = float(info.get('score_reward', reward))

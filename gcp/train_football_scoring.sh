@@ -49,7 +49,7 @@ trainingInput:
     - parameterName: reward_experiment
       type: CATEGORICAL
       categoricalValues:
-      - scoring,checkpoints
+      - scoring
     - parameterName: inference_batch_size
       type: INTEGER
       minValue: 64
@@ -77,18 +77,18 @@ trainingInput:
       scaleType: UNIT_LOG_SCALE
     - parameterName: entropy_cost
       type: DOUBLE
-      minValue: 0.0007330944745454107
-      maxValue: 0.0007330944745454107
+      minValue: 0.000031948327487872845
+      maxValue: 0.000031948327487872845
       scaleType: UNIT_LOG_SCALE
     - parameterName: lambda_
       type: DOUBLE
-      minValue: 1
-      maxValue: 1
+      minValue: 0.9
+      maxValue: 0.9
       scaleType: UNIT_LOG_SCALE
     - parameterName: learning_rate
       type: DOUBLE
-      minValue: 0.00012542101122072784
-      maxValue: 0.00012542101122072784
+      minValue: 0.00005533923433816456
+      maxValue: 0.00005533923433816456
       scaleType: UNIT_LOG_SCALE
 EOF
 

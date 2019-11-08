@@ -25,9 +25,9 @@ from absl import logging
 
 from seed_rl import grpc
 from seed_rl.common import common_flags  
-from seed_rl.common import losses
 from seed_rl.common import utils
 from seed_rl.common import vtrace
+from seed_rl.common.parametric_distribution import get_parametric_distribution_for_action_space
 
 import tensorflow as tf
 
@@ -47,6 +47,7 @@ flags.DEFINE_integer('num_training_tpus', 1, 'Number of TPUs for training.')
 # Loss settings.
 flags.DEFINE_float('entropy_cost', 0.00025, 'Entropy cost/multiplier.')
 flags.DEFINE_float('baseline_cost', .5, 'Baseline cost/multiplier.')
+flags.DEFINE_float('kl_cost', 0., 'KL(old_policy|new_policy) loss multiplier.')
 flags.DEFINE_float('discounting', .99, 'Discounting factor.')
 flags.DEFINE_float('lambda_', 1., 'Lambda.')
 flags.DEFINE_float('max_abs_reward', 1.,
@@ -60,7 +61,8 @@ flags.DEFINE_integer('num_actors', 4, 'Number of actors.')
 FLAGS = flags.FLAGS
 
 
-def compute_loss(agent, agent_state, prev_actions, env_outputs, agent_outputs):
+def compute_loss(parametric_action_distribution, agent, agent_state,
+                 prev_actions, env_outputs, agent_outputs):
   # agent((prev_actions[t], env_outputs[t]), agent_state)
   #   -> agent_outputs[t], agent_state'
   learner_outputs, _ = agent((prev_actions, env_outputs),
@@ -81,26 +83,39 @@ def compute_loss(agent, agent_state, prev_actions, env_outputs, agent_outputs):
                                FLAGS.max_abs_reward)
   discounts = tf.cast(~done, tf.float32) * FLAGS.discounting
 
+  target_action_log_probs = parametric_action_distribution.log_prob(
+      learner_outputs.policy_logits, agent_outputs.action)
+  behaviour_action_log_probs = parametric_action_distribution.log_prob(
+      agent_outputs.policy_logits, agent_outputs.action)
+
   # Compute V-trace returns and weights.
-  vtrace_returns = vtrace.from_logits(
-      behaviour_policy_logits=agent_outputs.policy_logits,
-      target_policy_logits=learner_outputs.policy_logits,
-      actions=agent_outputs.action,
+  vtrace_returns = vtrace.from_importance_weights(
+      target_action_log_probs=target_action_log_probs,
+      behaviour_action_log_probs=behaviour_action_log_probs,
       discounts=discounts,
       rewards=rewards,
       values=learner_outputs.baseline,
       bootstrap_value=bootstrap_value,
       lambda_=FLAGS.lambda_)
 
-  # Compute loss as a weighted sum of the baseline loss, the policy gradient
-  # loss and an entropy regularization term.
-  total_loss = losses.policy_gradient(learner_outputs.policy_logits,
-                                      agent_outputs.action,
-                                      vtrace_returns.pg_advantages)
-  total_loss += FLAGS.baseline_cost * losses.baseline(vtrace_returns.vs -
-                                                      learner_outputs.baseline)
-  total_loss += FLAGS.entropy_cost * losses.entropy(
-      learner_outputs.policy_logits)
+  # Policy loss based on Policy Gradients
+  policy_loss = -tf.reduce_mean(target_action_log_probs *
+                                tf.stop_gradient(vtrace_returns.pg_advantages))
+
+  # Value function loss
+  v_error = vtrace_returns.vs - learner_outputs.baseline
+  v_loss = FLAGS.baseline_cost * 0.5 * tf.reduce_mean(tf.square(v_error))
+
+  # Entropy reward
+  entropy = tf.reduce_mean(
+      parametric_action_distribution.entropy(learner_outputs.policy_logits))
+  entropy_loss = FLAGS.entropy_cost * -entropy
+
+  # KL(old_policy|new_policy) loss
+  kl = behaviour_action_log_probs - target_action_log_probs
+  kl_loss = FLAGS.kl_cost * tf.reduce_mean(kl)
+
+  total_loss = policy_loss + v_loss + entropy_loss + kl_loss
 
   return total_loss
 
@@ -139,18 +154,21 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   settings = utils.init_learner(FLAGS.num_training_tpus)
   strategy, inference_devices, training_strategy, encode, decode = settings
   env = create_env_fn(0)
+  parametric_action_distribution = get_parametric_distribution_for_action_space(
+      env.action_space)
   env_output_specs = utils.EnvOutput(
       tf.TensorSpec([], tf.float32, 'reward'),
       tf.TensorSpec([], tf.bool, 'done'),
       tf.TensorSpec(env.observation_space.shape, env.observation_space.dtype,
                     'observation'),
   )
-  action_specs = tf.TensorSpec([], tf.int32, 'action')
-  num_actions = env.action_space.n
+  action_specs = tf.TensorSpec(env.action_space.shape,
+                               env.action_space.dtype, 'action')
   agent_input_specs = (action_specs, env_output_specs)
 
   # Initialize agent and variables.
-  agent = create_agent_fn(env_output_specs, num_actions)
+  agent = create_agent_fn(env.action_space, env.observation_space,
+                          parametric_action_distribution)
   initial_agent_state = agent.initial_state(1)
   agent_state_specs = tf.nest.map_structure(
       lambda t: tf.TensorSpec(t.shape[1:], t.dtype), initial_agent_state)
@@ -191,7 +209,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     def compute_gradients(args):
       args = tf.nest.pack_sequence_as(unroll_specs, decode(args, data))
       with tf.GradientTape() as tape:
-        loss = compute_loss(agent, *args)
+        loss = compute_loss(parametric_action_distribution, agent, *args)
       grads = tape.gradient(loss, agent.trainable_variables)
       for t, g in zip(temp_grads, grads):
         t.assign(g)
@@ -318,7 +336,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     actions.replace(actor_ids, agent_outputs.action)
 
     # Return environment actions to actors.
-    return agent_outputs.action
+    return parametric_action_distribution.postprocess(agent_outputs.action)
 
   with strategy.scope():
     server.bind(inference, batched=True)

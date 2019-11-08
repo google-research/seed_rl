@@ -39,7 +39,7 @@ class PackedBitsObservation(gym.ObservationWrapper):
   def observation(self, observation):
     data = np.packbits(observation, axis=-1)  # This packs to uint8
     # Now we want to pack pairs of uint8 into uint16's.
-    # We first need to ensure that the last dimention has even size.
+    # We first need to ensure that the last dimension has even size.
     if data.shape[-1] % 2 == 1:
       data = np.pad(data, [(0, 0)] * (data.ndim - 1) + [(0, 1)], 'constant')
     return data.view(np.uint16)

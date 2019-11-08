@@ -33,11 +33,12 @@ FLAGS = flags.FLAGS
 
 # Optimizer settings.
 flags.DEFINE_float('learning_rate', 0.00048, 'Learning rate.')
-flags.DEFINE_float('adam_epsilon', 1e-3, 'Adam epsilon.')
+flags.DEFINE_float('adam_epsilon', 3.125e-7, 'Adam epsilon.')
 
 
-def create_agent(unused_env_output_specs, num_actions):
-  return agents.ImpalaDeep(num_actions)
+def create_agent(action_space, unused_env_observation_space,
+                 unused_parametric_action_distribution):
+  return agents.ImpalaDeep(action_space.n)
 
 
 def create_optimizer(final_iteration):

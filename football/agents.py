@@ -117,7 +117,7 @@ class GFootball(tf.Module):
     baseline = tf.squeeze(self._baseline(core_output), axis=-1)
 
     # Sample an action from the policy.
-    new_action = tf.random.categorical(policy_logits, 1, dtype=tf.int32)
+    new_action = tf.random.categorical(policy_logits, 1, dtype=tf.int64)
     new_action = tf.squeeze(new_action, 1, name='action')
 
     return AgentOutput(new_action, policy_logits, baseline)

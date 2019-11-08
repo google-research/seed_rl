@@ -131,9 +131,9 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
     def foo(x):
       if state[0] is None:
-        with tf.device('/device:GPU:0'):
+        with tf.device('/device:CPU:0'):
           state[0] = tf.Variable(42)
-      with tf.device('/device:GPU:0'):
+      with tf.device('/device:CPU:0'):
         return x + state[0]
 
     server.bind(foo, batched=batched)
@@ -726,12 +726,12 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     address = self.get_unix_address()
     server = ops.Server([address])
 
-    with tf.device('/device:GPU:0'):
+    with tf.device('/device:CPU:0'):
       a = tf.Variable(1)
 
     @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
     def foo(x):
-      with tf.device('/device:GPU:0'):
+      with tf.device('/device:CPU:0'):
         b = a + 1
         c = x + 1
       return x + b, c
@@ -750,10 +750,10 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     address = self.get_unix_address()
     server = ops.Server([address])
 
-    with tf.device('/device:GPU:0'):
+    with tf.device('/device:CPU:0'):
       a = tf.Variable(1)
 
-    with tf.device('/device:GPU:0'):
+    with tf.device('/device:CPU:0'):
 
       @tf.function
       def get_a_plus_one():
@@ -761,7 +761,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
 
     @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
     def foo(x):
-      with tf.device('/device:GPU:0'):
+      with tf.device('/device:CPU:0'):
         b = x + get_a_plus_one()
       return b + 1
 

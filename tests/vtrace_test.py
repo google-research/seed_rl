@@ -24,6 +24,7 @@ by Espeholt, Soyer, Munos et al.
 from absl.testing import parameterized
 import numpy as np
 from seed_rl.common import vtrace
+from seed_rl.common.parametric_distribution import CategoricalDistribution
 import tensorflow as tf
 
 
@@ -37,10 +38,12 @@ def _softmax(logits):
   return np.exp(logits) / np.sum(np.exp(logits), axis=-1, keepdims=True)
 
 
-def _ground_truth_calculation(discounts, log_rhos, rewards, values,
+def _ground_truth_calculation(discounts, behaviour_action_log_probs,
+                              target_action_log_probs, rewards, values,
                               bootstrap_value, clip_rho_threshold,
                               clip_pg_rho_threshold):
   """Calculates the ground truth for V-trace in Python/Numpy."""
+  log_rhos = target_action_log_probs - behaviour_action_log_probs
   vs = []
   seq_len = len(discounts)
   rhos = np.exp(log_rhos)
@@ -92,7 +95,8 @@ class LogProbsFromLogitsAndActionsTest(tf.test.TestCase,
     actions = np.random.randint(
         0, num_actions - 1, size=(seq_len, batch_size), dtype=np.int32)
 
-    action_log_probs_tensor = vtrace.log_probs_from_logits_and_actions(
+    categorical_distribution = CategoricalDistribution(num_actions, 'int32')
+    action_log_probs_tensor = categorical_distribution.log_prob(
         policy_logits, actions)
 
     # Ground Truth
@@ -123,7 +127,8 @@ class VtraceTest(tf.test.TestCase, parameterized.TestCase):
     log_rhos = _shaped_arange(seq_len, batch_size) / (batch_size * seq_len)
     log_rhos = 5 * (log_rhos - 0.5)  # [0.0, 1.0) -> [-2.5, 2.5).
     values = {
-        'log_rhos': log_rhos,
+        'behaviour_action_log_probs': tf.zeros_like(log_rhos),
+        'target_action_log_probs': log_rhos,
         # T, B where B_i: [0.9 / (i+1)] * T
         'discounts': np.array([[0.9 / (b + 1) for b in range(batch_size)]  
                                for _ in range(seq_len)]),
@@ -137,64 +142,6 @@ class VtraceTest(tf.test.TestCase, parameterized.TestCase):
     output = vtrace.from_importance_weights(**values)
     ground_truth_v = _ground_truth_calculation(**values)
     self.assertAllClose(output, ground_truth_v)
-
-  @parameterized.named_parameters(('Batch1', 1), ('Batch2', 2))
-  def test_vtrace_from_logits(self, batch_size):
-    """Tests V-trace calculated from logits."""
-    seq_len = 5
-    num_actions = 3
-    clip_rho_threshold = None  # No clipping.
-    clip_pg_rho_threshold = None  # No clipping.
-
-    values = {
-        'behaviour_policy_logits':
-            _shaped_arange(seq_len, batch_size, num_actions),
-        'target_policy_logits':
-            _shaped_arange(seq_len, batch_size, num_actions),
-        'actions':
-            np.random.randint(0, num_actions - 1, size=(seq_len, batch_size)),
-        # T, B where B_i: [0.9 / (i+1)] * T
-        'discounts':
-            np.array([[0.9 / (b + 1) for b in range(batch_size)]  
-                      for _ in range(seq_len)]),
-        'rewards':
-            _shaped_arange(seq_len, batch_size),
-        'values':
-            _shaped_arange(seq_len, batch_size) / batch_size,
-        'bootstrap_value':
-            _shaped_arange(batch_size) + 1.0,  # B
-    }
-
-    from_logits_output = vtrace.from_logits(
-        clip_rho_threshold=clip_rho_threshold,
-        clip_pg_rho_threshold=clip_pg_rho_threshold,
-        **values)
-
-    target_log_probs = vtrace.log_probs_from_logits_and_actions(
-        values['target_policy_logits'], values['actions'])
-    behaviour_log_probs = vtrace.log_probs_from_logits_and_actions(
-        values['behaviour_policy_logits'], values['actions'])
-    ground_truth_log_rhos = target_log_probs - behaviour_log_probs
-    ground_truth_target_action_log_probs = target_log_probs
-    ground_truth_behaviour_action_log_probs = behaviour_log_probs
-
-    # Calculate V-trace using the ground truth logits.
-    from_iw = vtrace.from_importance_weights(
-        log_rhos=ground_truth_log_rhos,
-        discounts=values['discounts'],
-        rewards=values['rewards'],
-        values=values['values'],
-        bootstrap_value=values['bootstrap_value'],
-        clip_rho_threshold=clip_rho_threshold,
-        clip_pg_rho_threshold=clip_pg_rho_threshold)
-
-    self.assertAllClose(from_iw.vs, from_logits_output.vs)
-    self.assertAllClose(from_iw.pg_advantages, from_logits_output.pg_advantages)
-    self.assertAllClose(ground_truth_behaviour_action_log_probs,
-                        from_logits_output.behaviour_action_log_probs)
-    self.assertAllClose(ground_truth_target_action_log_probs,
-                        from_logits_output.target_action_log_probs)
-    self.assertAllClose(ground_truth_log_rhos, from_logits_output.log_rhos)
 
 
 if __name__ == '__main__':

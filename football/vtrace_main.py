@@ -33,8 +33,9 @@ FLAGS = flags.FLAGS
 flags.DEFINE_float('learning_rate', 0.00048, 'Learning rate.')
 
 
-def create_agent(unused_env_output_specs, num_actions):
-  return agents.GFootball(num_actions)
+def create_agent(action_space, unused_env_observation_space,
+                 unused_parametric_action_distribution):
+  return agents.GFootball(action_space.n)
 
 
 def create_optimizer(unused_final_iteration):

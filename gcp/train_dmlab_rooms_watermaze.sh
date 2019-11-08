@@ -73,8 +73,8 @@ trainingInput:
       scaleType: UNIT_LOG_SCALE
     - parameterName: adam_epsilon
       type: DOUBLE
-      minValue: 0.001
-      maxValue: 0.001
+      minValue: 0.0000003125
+      maxValue: 0.0000003125
       scaleType: UNIT_LOG_SCALE
 EOF
 

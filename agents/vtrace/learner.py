@@ -50,7 +50,7 @@ flags.DEFINE_float('baseline_cost', .5, 'Baseline cost/multiplier.')
 flags.DEFINE_float('kl_cost', 0., 'KL(old_policy|new_policy) loss multiplier.')
 flags.DEFINE_float('discounting', .99, 'Discounting factor.')
 flags.DEFINE_float('lambda_', 1., 'Lambda.')
-flags.DEFINE_float('max_abs_reward', 1.,
+flags.DEFINE_float('max_abs_reward', 0.,
                    'Maximum absolute reward when calculating loss.'
                    'Use 0. to disable clipping.')
 
@@ -67,7 +67,8 @@ def compute_loss(parametric_action_distribution, agent, agent_state,
   #   -> agent_outputs[t], agent_state'
   learner_outputs, _ = agent((prev_actions, env_outputs),
                              agent_state,
-                             unroll=True)
+                             unroll=True,
+                             is_training=True)
 
   # Use last baseline value (from the value function) to bootstrap.
   bootstrap_value = learner_outputs.baseline[-1]
@@ -143,8 +144,8 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     create_agent_fn: Function that must create a new tf.Module with the neural
       network that outputs actions and new agent state given the environment
       observations and previous agent state. See dmlab.agents.ImpalaDeep for an
-      example. The factory function takes as input the environment output specs
-      and the number of possible actions in the env.
+      example. The factory function takes as input the environment action and
+      observation spaces and a parametric distribution over actions.
     create_optimizer_fn: Function that takes the final iteration as argument
       and must return a tf.keras.optimizers.Optimizer and a
       tf.keras.optimizers.schedules.LearningRateSchedule.
@@ -309,7 +310,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
         with tf.device(inference_device):
           @tf.function
           def agent_inference(*args):
-            return agent(*decode(args))
+            return agent(*decode(args), is_training=True)
 
           return agent_inference(input_, prev_agent_states)
 

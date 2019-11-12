@@ -108,6 +108,11 @@ trainingInput:
       minValue: 80
       maxValue: 80
       scaleType: UNIT_LINEAR_SCALE
+    - parameterName: max_abs_reward
+      type: DOUBLE
+      minValue: 1.0
+      maxValue: 1.0
+      scaleType: UNIT_LINEAR_SCALE
 EOF
 
 start_training

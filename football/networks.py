@@ -122,7 +122,8 @@ class GFootball(tf.Module):
 
     return AgentOutput(new_action, policy_logits, baseline)
 
-  def __call__(self, input_, core_state, unroll=False):
+  def __call__(self, input_, core_state, unroll=False,
+               is_training=False):
     if not unroll:
       # Add time dimension.
       input_ = tf.nest.map_structure(lambda t: tf.expand_dims(t, 0), input_)

@@ -79,7 +79,7 @@ def actor_loop(create_env_fn):
                 FLAGS.task, run_id, env_output, raw_reward)
           with timer_cls('actor/elapsed_env_step_s', 1000):
             observation, reward, done, info = env.step(action.numpy())
-          raw_reward = float(info.get('score_reward', reward))
+          raw_reward = float((info or {}).get('score_reward', reward))
           if done:
             with timer_cls('actor/elapsed_env_reset_s', 10):
               observation = env.reset()

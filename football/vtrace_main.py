@@ -22,8 +22,8 @@ from absl import flags
 from seed_rl.agents.vtrace import learner
 from seed_rl.common import actor
 from seed_rl.common import common_flags  
-from seed_rl.football import agents
 from seed_rl.football import env
+from seed_rl.football import networks
 import tensorflow as tf
 
 
@@ -35,7 +35,7 @@ flags.DEFINE_float('learning_rate', 0.00048, 'Learning rate.')
 
 def create_agent(action_space, unused_env_observation_space,
                  unused_parametric_action_distribution):
-  return agents.GFootball(action_space.n)
+  return networks.GFootball(action_space.n)
 
 
 def create_optimizer(unused_final_iteration):

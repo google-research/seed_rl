@@ -65,21 +65,21 @@ class ParametricDistribution(abc.ABC):
     """Compute the log probability of actions."""
     dist = self.create_dist(parameters)
     log_probs = dist.log_prob(actions)
+    log_probs -= self._postprocessor.forward_log_det_jacobian(
+        tf.cast(actions, tf.float32), event_ndims=0)
     if self._event_ndims == 1:
       log_probs = tf.reduce_sum(log_probs, axis=-1)  # sum over action dimension
-    log_probs -= self._postprocessor.forward_log_det_jacobian(
-        tf.cast(actions, tf.float32), event_ndims=self._event_ndims)
     return log_probs
 
   def entropy(self, parameters):
     """Return the average entropy per action dimension."""
     dist = self.create_dist(parameters)
     entropy = dist.entropy()
+    entropy += self._postprocessor.forward_log_det_jacobian(
+        tf.cast(dist.sample(), tf.float32), event_ndims=0)
     if self._event_ndims == 1:
       entropy = tf.reduce_mean(
           entropy, axis=-1)  # average entropy per action dimension
-    entropy += self._postprocessor.forward_log_det_jacobian(
-        tf.cast(dist.sample(), tf.float32), event_ndims=self._event_ndims)
     return entropy
 
 

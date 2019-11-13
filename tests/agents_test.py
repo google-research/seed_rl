@@ -16,14 +16,14 @@
 
 
 import os
-from seed_rl.dmlab import agents
+from seed_rl.dmlab import networks
 import tensorflow as tf
 
 
 class AgentsTest(tf.test.TestCase):
 
   def test_agent_is_checkpointable(self):
-    agent = agents.ImpalaDeep(9)
+    agent = networks.ImpalaDeep(9)
     output0 = _run_actor(agent)
 
     checkpoint_dir = '/tmp/training_checkpoints'

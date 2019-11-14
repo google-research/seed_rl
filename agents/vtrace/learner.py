@@ -18,6 +18,7 @@
 import collections
 import concurrent.futures
 import math
+import os
 import time
 
 from absl import flags
@@ -382,6 +383,9 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
       current_time = time.time()
       if current_time - last_ckpt_time >= FLAGS.save_checkpoint_secs:
         manager.save()
+        # Apart from checkpointing, we also save the full model (including
+        # the graph). This way we can load it after the code/parameters changed.
+        tf.saved_model.save(agent, os.path.join(FLAGS.logdir, 'saved_model'))
         last_ckpt_time = current_time
 
       def log(num_env_frames):

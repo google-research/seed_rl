@@ -88,6 +88,7 @@ class ImpalaDeep(tf.Module):
         self._num_actions, name='policy_logits')
     self._baseline = tf.keras.layers.Dense(1, name='baseline')
 
+  @tf.function
   def initial_state(self, batch_size):
     return self._core.get_initial_state(batch_size=batch_size, dtype=tf.float32)
 
@@ -123,6 +124,7 @@ class ImpalaDeep(tf.Module):
 
     return AgentOutput(new_action, policy_logits, baseline)
 
+  @tf.function
   def __call__(self, input_, core_state, unroll=False,
                is_training=False):
     if not unroll:

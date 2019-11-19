@@ -278,7 +278,7 @@ class CreateGrpcServerOp : public OpKernel {
                     server_addresses_t->shape().DebugString()));
 
     for (int i = 0; i < server_addresses_t->NumElements(); ++i) {
-      string server_address = server_addresses_t->vec<string>()(i);
+      string server_address = server_addresses_t->vec<tstring>()(i);
       auto creds = insecure_creds;
       resource->builder()->AddListeningPort(server_address, creds);
     }
@@ -742,7 +742,7 @@ class CreateGrpcClientOp : public OpKernel {
         ctx, TensorShapeUtils::IsScalar(server_address_t->shape()),
         errors::InvalidArgument("server_address must be a scalar, got shape: ",
                                 server_address_t->shape().DebugString()));
-    string server_address = server_address_t->scalar<string>()();
+    string server_address = server_address_t->scalar<tstring>()();
     auto creds = grpc::InsecureChannelCredentials();
     grpc::ChannelArguments args;
     args.SetMaxReceiveMessageSize(std::numeric_limits<int32>::max());
@@ -760,9 +760,11 @@ class CreateGrpcClientOp : public OpKernel {
                                              &method_output_signatures_t));
     auto method_output_signatures = method_output_signatures_t->vec<string>();
     for (int i = 0; i < method_output_signatures_list.size(); ++i) {
-      if (!tensorflow::protobuf::TextFormat::PrintToString(
+      TStringOutputStream method_output_signatures_stream(
+          &method_output_signatures(i));
+      if (!tensorflow::protobuf::TextFormat::Print(
               method_output_signatures_list[i],
-              &(method_output_signatures(i)))) {
+              &method_output_signatures_stream)) {
         ctx->SetStatus(tensorflow::errors::InvalidArgument(
             "Unable to convert MethodOutputSignature proto to string: ",
             method_output_signatures_list[i].DebugString()));

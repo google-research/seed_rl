@@ -17,6 +17,7 @@
 
 import collections
 import concurrent.futures
+import copy
 import math
 import os
 import time
@@ -44,6 +45,8 @@ flags.DEFINE_integer('batch_size', 2, 'Batch size for training.')
 flags.DEFINE_integer('inference_batch_size', 2, 'Batch size for inference.')
 flags.DEFINE_integer('unroll_length', 100, 'Unroll length in agent steps.')
 flags.DEFINE_integer('num_training_tpus', 1, 'Number of TPUs for training.')
+flags.DEFINE_string('init_checkpoint', None,
+                    'Path to the checkpoint used to initialize the agent.')
 
 # Loss settings.
 flags.DEFINE_float('entropy_cost', 0.00025, 'Entropy cost/multiplier.')
@@ -58,8 +61,16 @@ flags.DEFINE_float('max_abs_reward', 0.,
 # Actors
 flags.DEFINE_integer('num_actors', 4, 'Number of actors.')
 
+# Logging
+flags.DEFINE_integer('log_batch_frequency', 1, 'We average that many batches '
+                     'before logging batch statistics like entropy.')
+flags.DEFINE_integer('log_episode_frequency', 1, 'We average that many episodes'
+                     ' before logging average episode return and length.')
 
 FLAGS = flags.FLAGS
+
+
+log_keys = []  # array of strings with names of values logged by compute_loss
 
 
 def compute_loss(parametric_action_distribution, agent, agent_state,
@@ -119,7 +130,36 @@ def compute_loss(parametric_action_distribution, agent, agent_state,
 
   total_loss = policy_loss + v_loss + entropy_loss + kl_loss
 
-  return total_loss
+  # logging
+  del log_keys[:]
+  log_values = []
+
+  def log(key, value):
+    # this is a python op so it happens only when this tf.function is compiled
+    log_keys.append(key)
+    # this is a TF op
+    log_values.append(value)
+
+  # value function
+  log('V/value function', tf.reduce_mean(learner_outputs.baseline))
+  log('V/L2 error', tf.sqrt(tf.reduce_mean(tf.square(v_error))))
+  # losses
+  log('losses/policy', policy_loss)
+  log('losses/V', v_loss)
+  log('losses/entropy', entropy_loss)
+  log('losses/kl', kl_loss)
+  log('losses/total', total_loss)
+  # policy
+  dist = parametric_action_distribution.create_dist(
+      learner_outputs.policy_logits)
+  if hasattr(dist, 'scale'):
+    log('policy/std', tf.reduce_mean(dist.scale))
+  log('policy/max_action_abs(before_tanh)',
+      tf.reduce_max(tf.abs(agent_outputs.action)))
+  log('policy/entropy', entropy)
+  log('policy/kl(old|new)', tf.reduce_mean(kl))
+
+  return total_loss, log_values
 
 
 Unroll = collections.namedtuple(
@@ -211,19 +251,23 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     def compute_gradients(args):
       args = tf.nest.pack_sequence_as(unroll_specs, decode(args, data))
       with tf.GradientTape() as tape:
-        loss = compute_loss(parametric_action_distribution, agent, *args)
+        loss, logs = compute_loss(parametric_action_distribution, agent, *args)
       grads = tape.gradient(loss, agent.trainable_variables)
       for t, g in zip(temp_grads, grads):
         t.assign(g)
-      return loss
+      return loss, logs
 
-    loss = training_strategy.experimental_run_v2(compute_gradients, (data,))
+    loss, logs = training_strategy.experimental_run_v2(compute_gradients,
+                                                       (data,))
     loss = training_strategy.experimental_local_results(loss)[0]
+    logs = training_strategy.experimental_local_results(logs)
 
     def apply_gradients(_):
       optimizer.apply_gradients(zip(temp_grads, agent.trainable_variables))
 
     strategy.experimental_run_v2(apply_gradients, (loss,))
+
+    return logs
 
   agent_output_specs = tf.nest.map_structure(
       lambda t: tf.TensorSpec(t.shape[1:], t.dtype), initial_agent_output)
@@ -233,6 +277,9 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
 
   # Setup checkpointing and restore checkpoint.
   ckpt = tf.train.Checkpoint(agent=agent, optimizer=optimizer)
+  if FLAGS.init_checkpoint is not None:
+    tf.print('Loading initial checkpoint from %s...' % FLAGS.init_checkpoint)
+    ckpt.restore(FLAGS.init_checkpoint).assert_consumed()
   manager = tf.train.CheckpointManager(
       ckpt, FLAGS.logdir, max_to_keep=1, keep_checkpoint_every_n_hours=6)
   last_ckpt_time = 0  # Force checkpointing of the initial model.
@@ -375,6 +422,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     log_future = executor.submit(lambda: None)  # No-op future.
     last_num_env_frames = iterations * iter_frame_ratio
     last_log_time = time.time()
+    values_to_log = collections.defaultdict(lambda: [])
     while iterations < final_iteration:
       num_env_frames = iterations * iter_frame_ratio
       tf.summary.experimental.set_step(num_env_frames)
@@ -388,30 +436,54 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
         tf.saved_model.save(agent, os.path.join(FLAGS.logdir, 'saved_model'))
         last_ckpt_time = current_time
 
-      def log(num_env_frames):
-        """Logs actor summaries."""
+      def log(iterations, num_env_frames, values_to_log):
+        """Logs batch and episodes summaries."""
+        nonlocal last_num_env_frames, last_log_time
         summary_writer.set_as_default()
         tf.summary.experimental.set_step(num_env_frames)
-        episode_num_frames, episode_returns, episode_raw_returns = (
-            info_queue.dequeue_many(info_queue.size()))
-        for n, r, s in zip(episode_num_frames, episode_returns,
-                           episode_raw_returns):
-          logging.info('Return: %f Frames: %i', r, n)
-          tf.summary.scalar('episode_return', r)
-          tf.summary.scalar('episode_raw_return', s)
-          tf.summary.scalar('num_episode_frames', n)
-      log_future.result()  # Raise exception if any occurred in logging.
-      log_future = executor.submit(log, num_env_frames)
 
-      if current_time - last_log_time >= 120:
-        df = tf.cast(num_env_frames - last_num_env_frames, tf.float32)
+        # log data from the current minibatch
+        if iterations % FLAGS.log_batch_frequency == 0:
+          for key, values in values_to_log.items():
+            tf.summary.scalar(key, tf.reduce_mean(values))
+          values_to_log.clear()
+          tf.summary.scalar('learning_rate', learning_rate_fn(iterations))
+
+        # log the number of frames per second
         dt = time.time() - last_log_time
-        tf.summary.scalar('num_environment_frames/sec', df / dt)
-        tf.summary.scalar('learning_rate', learning_rate_fn(iterations))
+        if dt > 120:
+          df = tf.cast(num_env_frames - last_num_env_frames, tf.float32)
+          tf.summary.scalar('num_environment_frames/sec', df / dt)
+          last_num_env_frames, last_log_time = num_env_frames, time.time()
 
-        last_num_env_frames, last_log_time = num_env_frames, time.time()
+        # log data from info_queue
+        n_episodes = info_queue.size()
+        n_episodes -= n_episodes % FLAGS.log_episode_frequency
+        if tf.not_equal(n_episodes, 0):
+          episode_stats = info_queue.dequeue_many(n_episodes)
+          episode_keys = [
+              'episode_num_frames', 'episode_return', 'episode_raw_return'
+          ]
+          for key, values in zip(episode_keys, episode_stats):
+            for value in tf.split(
+                values, values.shape[0] // FLAGS.log_episode_frequency):
+              tf.summary.scalar(key, tf.reduce_mean(value))
 
-      minimize(it)
+          for (frames, ep_return, raw_return) in zip(*episode_stats):
+            logging.info('Return: %f Raw return: %f Frames: %i', ep_return,
+                         raw_return, frames)
+
+      logs = minimize(it)
+
+      for per_replica_logs in logs:
+        assert len(log_keys) == len(per_replica_logs)
+        for key, value in zip(log_keys, per_replica_logs):
+          values_to_log[key].append(value.numpy())
+
+      log_future.result()  # Raise exception if any occurred in logging.
+      log_future = executor.submit(log, iterations, num_env_frames,
+                                   copy.deepcopy(values_to_log))
+      values_to_log.clear()
 
   manager.save()
   server.shutdown()

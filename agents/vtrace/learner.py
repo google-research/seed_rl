@@ -436,7 +436,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
         tf.saved_model.save(agent, os.path.join(FLAGS.logdir, 'saved_model'))
         last_ckpt_time = current_time
 
-      def log(iterations, num_env_frames, values_to_log):
+      def log(iterations, num_env_frames):
         """Logs batch and episodes summaries."""
         nonlocal last_num_env_frames, last_log_time
         summary_writer.set_as_default()
@@ -444,7 +444,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
 
         # log data from the current minibatch
         if iterations % FLAGS.log_batch_frequency == 0:
-          for key, values in values_to_log.items():
+          for key, values in copy.deepcopy(values_to_log).items():
             tf.summary.scalar(key, tf.reduce_mean(values))
           values_to_log.clear()
           tf.summary.scalar('learning_rate', learning_rate_fn(iterations))
@@ -481,9 +481,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
           values_to_log[key].append(value.numpy())
 
       log_future.result()  # Raise exception if any occurred in logging.
-      log_future = executor.submit(log, iterations, num_env_frames,
-                                   copy.deepcopy(values_to_log))
-      values_to_log.clear()
+      log_future = executor.submit(log, iterations, num_env_frames)
 
   manager.save()
   server.shutdown()

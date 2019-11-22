@@ -29,7 +29,7 @@ FLAGS = flags.FLAGS
 class ParametricDistribution(abc.ABC):
   """Abstract class for parametric (action) distribution."""
 
-  def __init__(self, param_size, postprocessor, event_ndims):
+  def __init__(self, param_size, postprocessor, event_ndims, reparametrizable):
     """Abstract class for parametric (action) distribution.
 
     Specifies how to transform distribution parameters (i.e. actor output)
@@ -40,10 +40,12 @@ class ParametricDistribution(abc.ABC):
       postprocessor: tfp.bijector which is applied after sampling
       (in practice, it's tanh or identity)
       event_ndims: rank of the distribution sample (i.e. action)
+      reparametrizable: is the distribution reparametrizable
     """
     self._param_size = param_size
     self._postprocessor = postprocessor  # tfp.bijector
     self._event_ndims = event_ndims  # rank of events
+    self._reparametrizable = reparametrizable
     assert event_ndims in [0, 1]
 
   @abc.abstractmethod
@@ -54,6 +56,10 @@ class ParametricDistribution(abc.ABC):
   @property
   def param_size(self):
     return self._param_size
+
+  @property
+  def reparametrizable(self):
+    return self._reparametrizable
 
   def postprocess(self, event):
     return self._postprocessor.forward(event)
@@ -72,14 +78,13 @@ class ParametricDistribution(abc.ABC):
     return log_probs
 
   def entropy(self, parameters):
-    """Return the average entropy per action dimension."""
+    """Return the entropy of the given distribution."""
     dist = self.create_dist(parameters)
     entropy = dist.entropy()
     entropy += self._postprocessor.forward_log_det_jacobian(
         tf.cast(dist.sample(), tf.float32), event_ndims=0)
     if self._event_ndims == 1:
-      entropy = tf.reduce_mean(
-          entropy, axis=-1)  # average entropy per action dimension
+      entropy = tf.reduce_sum(entropy, axis=-1)
     return entropy
 
 
@@ -94,7 +99,8 @@ class CategoricalDistribution(ParametricDistribution):
       dtype: dtype of actions, usually int32 or int64.
     """
     super().__init__(
-        param_size=n_actions, postprocessor=tfb.Identity(), event_ndims=0)
+        param_size=n_actions, postprocessor=tfb.Identity(), event_ndims=0,
+        reparametrizable=False)
     self._dtype = dtype
 
   def create_dist(self, parameters):
@@ -115,7 +121,8 @@ class MultiCategoricalDistribution(ParametricDistribution):
     super().__init__(
         param_size=n_dimensions * n_actions_per_dim,
         postprocessor=tfb.Identity(),
-        event_ndims=1)
+        event_ndims=1,
+        reparametrizable=False)
     self._n_dimensions = n_dimensions
     self._n_actions_per_dim = n_actions_per_dim
     self._dtype = dtype
@@ -145,7 +152,8 @@ class NormalTanhDistribution(ParametricDistribution):
     # of the code operate on pre-tanh actions and we take the postprocessor
     # jacobian into account in log_prob computations.
     super().__init__(
-        param_size=2 * event_size, postprocessor=tfb.Tanh(), event_ndims=1)
+        param_size=2 * event_size, postprocessor=tfb.Tanh(), event_ndims=1,
+        reparametrizable=True)
     self._min_std = min_std
 
   def create_dist(self, parameters):

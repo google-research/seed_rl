@@ -335,21 +335,20 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   initial_agent_state = agent.initial_state(1)
   agent_state_specs = tf.nest.map_structure(
       lambda t: tf.TensorSpec(t.shape[1:], t.dtype), initial_agent_state)
-  agent_input_specs = (env_output_specs, action_specs, agent_state_specs,
-                       action_specs)
+  agent_input_specs = (env_output_specs, action_specs)
 
   input_ = tf.nest.map_structure(
       lambda s: tf.zeros([1, 1] + list(s.shape), s.dtype), agent_input_specs)
-  input_ = encode(input_)
+  input_ = encode(input_ + (initial_agent_state,))
 
   with strategy.scope():
     # Initialize variables
     def initialize_agent_variables(agent):
       @tf.function
       def create_variables():
-        return [agent(*decode(input_[:-1])),
-                agent.get_V(*decode(input_[:-1])),
-                agent.get_Q(*decode(input_))]
+        return [agent(*decode(input_), unroll=True),
+                agent.get_V(*decode(input_)),
+                agent.get_Q(*decode(input_), action=decode(input_[1]))]
       create_variables()
 
     initialize_agent_variables(agent)

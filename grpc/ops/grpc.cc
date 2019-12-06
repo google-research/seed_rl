@@ -758,7 +758,7 @@ class CreateGrpcClientOp : public OpKernel {
         TensorShape({static_cast<int64>(method_output_signatures_list.size())});
     OP_REQUIRES_OK(ctx, ctx->allocate_output(0, method_output_signatures_shape,
                                              &method_output_signatures_t));
-    auto method_output_signatures = method_output_signatures_t->vec<string>();
+    auto method_output_signatures = method_output_signatures_t->vec<tstring>();
     for (int i = 0; i < method_output_signatures_list.size(); ++i) {
       TStringOutputStream method_output_signatures_stream(
           &method_output_signatures(i));

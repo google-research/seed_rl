@@ -14,5 +14,5 @@
 
 
 
-pgrep -f "seed_rl/.*(actor|learner)" | xargs kill -9 2> /dev/null
+pgrep -f "seed.*/.*(actor|learner)" | xargs kill -9 2> /dev/null
 tmux kill-session -t seed_rl

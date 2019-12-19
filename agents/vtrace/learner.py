@@ -167,8 +167,6 @@ Unroll = collections.namedtuple(
 
 
 def validate_config():
-  assert FLAGS.num_actors >= FLAGS.batch_size, (
-      'Batch size is bigger than the number of actors.')
   assert FLAGS.num_actors >= FLAGS.inference_batch_size, (
       'Inference batch size is bigger than the number of actors.')
 

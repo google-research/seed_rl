@@ -482,5 +482,6 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
       log_future = executor.submit(log, iterations, num_env_frames)
 
   manager.save()
+  tf.saved_model.save(agent, os.path.join(FLAGS.logdir, 'saved_model'))
   server.shutdown()
   unroll_queue.close()

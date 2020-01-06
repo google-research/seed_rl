@@ -69,6 +69,8 @@ RUN mkdir dataset && \
     bash
 
 RUN pip3 install gym
+# TODO: Move tensorflow_probability into Dockerfile.grpc
+RUN pip3 install tensorflow_probability
 
 # Copy SEED codebase and SEED GRPC binaries.
 ADD . /seed_rl/

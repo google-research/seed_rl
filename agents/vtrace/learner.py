@@ -476,7 +476,9 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
       for per_replica_logs in logs:
         assert len(log_keys) == len(per_replica_logs)
         for key, value in zip(log_keys, per_replica_logs):
-          values_to_log[key].append(value.numpy())
+          values_to_log[key].extend(
+              x.numpy()
+              for x in training_strategy.experimental_local_results(value))
 
       log_future.result()  # Raise exception if any occurred in logging.
       log_future = executor.submit(log, iterations, num_env_frames)

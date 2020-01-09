@@ -144,14 +144,6 @@ class TensorServiceImpl final : public seed_rl::TensorService::Service {
                                        seed_rl::CallRequest>* stream) override {
     seed_rl::CallRequest request;
     while (stream->Read(&request)) {
-      std::vector<Tensor> args;
-      for (const tensorflow::TensorProto& tp : request.tensor()) {
-
-        Tensor t;
-        CHECK(t.FromProto(tp));
-        args.push_back(t);
-      }
-
       auto it = fns_.find(request.function());
 
       Status status;
@@ -160,6 +152,12 @@ class TensorServiceImpl final : public seed_rl::TensorService::Service {
         status =
             errors::Internal("Function ", request.function(), " not found");
       } else {
+        std::vector<Tensor> args(request.tensor_size());
+        for (int i = 0; i < request.tensor_size(); ++i) {
+
+          CHECK(args[i].FromProto(request.tensor(i)));
+        }
+
         status = it->second(ctx, args, &rets);
       }
 

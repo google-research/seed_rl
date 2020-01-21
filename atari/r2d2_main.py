@@ -21,8 +21,8 @@ Actor and learner are in the same binary so that all flags are shared.
 from absl import app
 from absl import flags
 from seed_rl.agents.r2d2 import learner
-from seed_rl.atari import agents
 from seed_rl.atari import env
+from seed_rl.atari import networks
 from seed_rl.common import actor
 from seed_rl.common import common_flags  
 import tensorflow as tf
@@ -38,7 +38,7 @@ flags.DEFINE_integer('stack_size', 4, 'Number of frames to stack.')
 
 
 def create_agent(env_output_specs, num_actions):
-  return agents.DuelingLSTMDQNNet(
+  return networks.DuelingLSTMDQNNet(
       num_actions, env_output_specs.observation.shape, FLAGS.stack_size)
 
 

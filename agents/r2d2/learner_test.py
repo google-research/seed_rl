@@ -17,7 +17,7 @@
 from absl import flags
 import numpy as np
 from seed_rl.agents.r2d2 import learner
-from seed_rl.atari import agents
+from seed_rl.atari import networks
 from seed_rl.common import utils
 import tensorflow as tf
 
@@ -86,7 +86,7 @@ class LearnerTest(tf.test.TestCase):
         tf.uint8)
 
   def _create_agent_outputs(self, batch_size, unroll_length, num_actions):
-    return agents.AgentOutput(
+    return networks.AgentOutput(
         action=tf.random.uniform([unroll_length, batch_size],
                                  maxval=num_actions, dtype=tf.int32),
         q_values=tf.random.uniform([unroll_length, batch_size, num_actions]))
@@ -96,12 +96,12 @@ class LearnerTest(tf.test.TestCase):
     batch_size = 32
     num_actions = 3
     unroll_length = 10
-    training_agent = agents.DuelingLSTMDQNNet(num_actions, OBS_SHAPE)
+    training_agent = networks.DuelingLSTMDQNNet(num_actions, OBS_SHAPE)
     prev_actions = tf.random.uniform(
         [unroll_length, batch_size], maxval=2, dtype=tf.int32)
     tf.function(learner.compute_loss_and_priorities)(
         training_agent,
-        agents.DuelingLSTMDQNNet(num_actions, OBS_SHAPE),
+        networks.DuelingLSTMDQNNet(num_actions, OBS_SHAPE),
         training_agent.initial_state(batch_size),
         prev_actions,
         self._create_env_output(batch_size, unroll_length),

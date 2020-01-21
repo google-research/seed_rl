@@ -12,14 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests agents.py."""
-
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+# python3
+"""Tests networks.py."""
 
 import unittest.mock as mock
-from seed_rl.atari import agents
+from seed_rl.atari import networks
 from seed_rl.common import utils
 import tensorflow as tf
 
@@ -48,7 +45,7 @@ def stack_fn(input_t, stack_state):
 
 @tf.function
 def stack_frames(frames, frame_stacking_state, done, stack_size):
-  return agents.stack_frames(
+  return networks.stack_frames(
       tf.convert_to_tensor(frames, dtype=tf.float32),
       frame_stacking_state,
       tf.convert_to_tensor(done),
@@ -76,7 +73,7 @@ class AgentsTest(tf.test.TestCase):
             observation=self._random_obs(batch_size, unroll_length)))
 
   def test_basic(self):
-    agent = agents.DuelingLSTMDQNNet(2, [OBS_DIM, OBS_DIM, 1], stack_size=4)
+    agent = networks.DuelingLSTMDQNNet(2, [OBS_DIM, OBS_DIM, 1], stack_size=4)
     batch_size = 16
     initial_agent_state = agent.initial_state(batch_size)
     _, _ = agent(self._create_agent_input(batch_size, 80),
@@ -84,7 +81,7 @@ class AgentsTest(tf.test.TestCase):
                  unroll=True)
 
   def test_basic_no_frame_stack(self):
-    agent = agents.DuelingLSTMDQNNet(2, [OBS_DIM, OBS_DIM, 1], stack_size=1)
+    agent = networks.DuelingLSTMDQNNet(2, [OBS_DIM, OBS_DIM, 1], stack_size=1)
     batch_size = 16
     initial_agent_state = agent.initial_state(batch_size)
     with mock.patch.object(agent, '_torso', wraps=agent._torso):
@@ -94,7 +91,7 @@ class AgentsTest(tf.test.TestCase):
       self.assertEqual(agent._torso.call_args[0][1].observation.shape[-1], 1)
 
   def test_basic_frame_stacking(self):
-    agent = agents.DuelingLSTMDQNNet(2, [OBS_DIM, OBS_DIM, 1], stack_size=4)
+    agent = networks.DuelingLSTMDQNNet(2, [OBS_DIM, OBS_DIM, 1], stack_size=4)
     batch_size = 16
     initial_agent_state = agent.initial_state(batch_size)
     with mock.patch.object(agent, '_torso', wraps=agent._torso):
@@ -105,8 +102,8 @@ class AgentsTest(tf.test.TestCase):
 
   def check_core_input_shape(self):
     num_actions = 37
-    agent = agents.DuelingLSTMDQNNet(num_actions, [OBS_DIM, OBS_DIM, 1],
-                                     stack_size=4)
+    agent = networks.DuelingLSTMDQNNet(num_actions, [OBS_DIM, OBS_DIM, 1],
+                                       stack_size=4)
     batch_size = 16
     initial_agent_state = agent.initial_state(batch_size)
     with mock.patch.object(agent, '_core', wraps=agent._core):
@@ -122,7 +119,7 @@ class AgentsTest(tf.test.TestCase):
     zero_state = (tf.constant([[0]]),) * 3
     # inputs: [time=1, batch_size=1, channels=1].
     # done: [time=1, batch_size=1].
-    output, state = agents._unroll_cell(
+    output, state = networks._unroll_cell(
         inputs=[[[1]]], done=[[False]], start_state=zero_state,
         zero_state=zero_state, recurrent_cell=stack_fn)
 
@@ -130,7 +127,7 @@ class AgentsTest(tf.test.TestCase):
     # 3 zero frames and last one coming from last inputs.
     self.assertAllEqual(output, [[[0, 0, 0, 1]]])
 
-    output, state = agents._unroll_cell(
+    output, state = networks._unroll_cell(
         inputs=[[[2]]], done=[[False]], start_state=state,
         zero_state=zero_state,
         recurrent_cell=stack_fn)
@@ -139,7 +136,7 @@ class AgentsTest(tf.test.TestCase):
 
     # A longer unroll should be used correctly.
     # inputs: [time=6, batch_size=1, channels=1].
-    output, state = agents._unroll_cell(
+    output, state = networks._unroll_cell(
         inputs=[[[3]], [[4]], [[5]], [[6]], [[7]], [[8]]], done=[[False]] * 6,
         start_state=state, zero_state=zero_state,
         recurrent_cell=stack_fn)
@@ -157,7 +154,7 @@ class AgentsTest(tf.test.TestCase):
     zero_state = (tf.constant([[0]]),) * 3
     # inputs: [time=1, batch_size=1, channels=1].
     # done: [time=1, batch_size=1].
-    output, state = agents._unroll_cell(
+    output, state = networks._unroll_cell(
         inputs=[[[1]]], done=[[False]], start_state=zero_state,
         zero_state=zero_state, recurrent_cell=stack_fn)
 
@@ -166,7 +163,7 @@ class AgentsTest(tf.test.TestCase):
     self.assertAllEqual(output, [[[0, 0, 0, 1]]])
 
     # Episode is done, stacking should be reset.
-    output, state = agents._unroll_cell(
+    output, state = networks._unroll_cell(
         inputs=[[[2]]], done=[[True]], start_state=state,
         zero_state=zero_state,
         recurrent_cell=stack_fn)
@@ -174,7 +171,7 @@ class AgentsTest(tf.test.TestCase):
 
     # A longer unroll with done in the middle should be used correctly.
     # inputs: [time=6, batch_size=1, channels=1].
-    output, state = agents._unroll_cell(
+    output, state = networks._unroll_cell(
         inputs=[[[3]], [[4]], [[5]], [[6]], [[7]], [[8]]],
         done=[[False], [False], [False], [False], [True], [False]],
         start_state=state, zero_state=zero_state,
@@ -185,7 +182,7 @@ class AgentsTest(tf.test.TestCase):
     self.assertAllEqual(output[5], [[0, 0, 7, 8]])
 
   def test_stack_frames(self):
-    zero_state = agents.DuelingLSTMDQNNet(2, [1], stack_size=4).initial_state(
+    zero_state = networks.DuelingLSTMDQNNet(2, [1], stack_size=4).initial_state(
         1).frame_stacking_state
     # frames: [time=1, batch_size=1, channels=1].
     # done: [time=1, batch_size=1].
@@ -218,7 +215,7 @@ class AgentsTest(tf.test.TestCase):
     self.assertAllEqual(output[5], [[8, 7, 6, 5]])
 
   def test_stack_frames_done(self):
-    zero_state = agents.DuelingLSTMDQNNet(2, [1], stack_size=4).initial_state(
+    zero_state = networks.DuelingLSTMDQNNet(2, [1], stack_size=4).initial_state(
         1).frame_stacking_state
     # frames: [time=1, batch_size=1, channels=1].
     # done: [time=1, batch_size=1].

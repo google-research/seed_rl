@@ -15,9 +15,15 @@ syntax = "proto3";
 
 package seed_rl;
 
+/*
+We don't use these dependencies directly, as the .proto files aren't available
+in the open source TensorFlow packages. Instead we use "bytes" and encode/decode
+the protobufs when receiving/sending a message.
+
 import "tensorflow/core/framework/tensor.proto";
 import "tensorflow/core/lib/core/error_codes.proto";
 import "tensorflow/core/protobuf/struct.proto";
+*/
 
 service TensorService {
   // Initializes the service.
@@ -31,7 +37,7 @@ message InitRequest {}
 
 message MethodOutputSignature {
   string name = 1;
-  tensorflow.StructuredValue output_specs = 2;
+  bytes /* tensorflow.StructuredValue */ output_specs = 2;
 }
 
 message InitResponse {
@@ -41,11 +47,11 @@ message InitResponse {
 
 message CallRequest {
   string function = 1;
-  repeated tensorflow.TensorProto tensor = 2;
+  repeated bytes /* tensorflow.TensorProto */ tensor = 2;
 }
 
 message CallResponse {
-  repeated tensorflow.TensorProto tensor = 1;
-  tensorflow.error.Code status_code = 2;
+  repeated bytes /* tensorflow.TensorProto */ tensor = 1;
+  int32 /* tensorflow.error.Code */ status_code = 2;
   string status_error_message = 3;
 }

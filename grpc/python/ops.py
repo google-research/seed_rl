@@ -24,9 +24,8 @@ from seed_rl.grpc import service_pb2
 from seed_rl.grpc.python.ops_wrapper import gen_grpc_ops
 import tensorflow as tf
 
-from google.protobuf import text_format
 
-
+from tensorflow.core.protobuf import struct_pb2
 from tensorflow.python.eager import context
 from tensorflow.python.framework import type_spec
 from tensorflow.python.ops import resource_variable_ops
@@ -87,7 +86,6 @@ class Server(object):
                                            fn.structured_outputs)
     encoder = nested_structure_coder.StructureCoder()
     output_specs_proto = encoder.encode_structure(output_specs)
-    output_specs_string = text_format.MessageToString(output_specs_proto)
     return gen_grpc_ops.grpc_server_bind(
         handle=self._handle,
         captures=fn.captured_inputs,
@@ -95,7 +93,7 @@ class Server(object):
         fn=fn,
         input_shapes=input_shapes,
         output_shapes=tf.nest.flatten(fn.output_shapes),
-        output_specs=output_specs_string,
+        output_specs=output_specs_proto.SerializeToString(),
         batched=batched)
 
   def start(self):
@@ -123,14 +121,14 @@ class Client(object):
         handle=self._handle, handle_device=context.context().device_name)
     method_signatures = gen_grpc_ops.create_grpc_client(self._handle,
                                                         server_address).numpy()
-    method_signatures = [
-        text_format.Parse(sig, service_pb2.MethodOutputSignature())
-        for sig in method_signatures
-    ]
+    m = service_pb2.MethodOutputSignature()
+    v = struct_pb2.StructuredValue()
     for sig in method_signatures:
+      assert m.ParseFromString(sig)
       decoder = nested_structure_coder.StructureCoder()
-      decoded_output_specs = decoder.decode_proto(sig.output_specs)
-      self._add_method(sig.name, decoded_output_specs)
+      assert v.ParseFromString(m.output_specs)
+      decoded_output_specs = decoder.decode_proto(v)
+      self._add_method(m.name, decoded_output_specs)
 
   def _add_method(self, name, output_specs):
     """Adds a method to the client."""

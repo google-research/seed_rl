@@ -34,6 +34,7 @@
 #include "tensorflow/core/framework/resource_op_kernel.h"
 #include "tensorflow/core/framework/shape_inference.h"
 #include "tensorflow/core/framework/tensor.h"
+#include "tensorflow/core/protobuf/struct.pb.h"
 #include "tensorflow/core/framework/tensor.pb.h"
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/framework/types.h"
@@ -134,7 +135,8 @@ class TensorServiceImpl final : public seed_rl::TensorService::Service {
     for (auto& output_specs : output_specs_list_) {
       auto* signature = response->add_method_output_signature();
       signature->set_name(output_specs.first);
-      signature->mutable_output_specs()->CopyFrom(output_specs.second);
+      *signature->mutable_output_specs() =
+          output_specs.second.SerializeAsString();
     }
     return grpc::Status::OK;
   }
@@ -143,6 +145,7 @@ class TensorServiceImpl final : public seed_rl::TensorService::Service {
                     ServerReaderWriter<seed_rl::CallResponse,
                                        seed_rl::CallRequest>* stream) override {
     seed_rl::CallRequest request;
+    TensorProto tp;
     while (stream->Read(&request)) {
       auto it = fns_.find(request.function());
 
@@ -155,7 +158,12 @@ class TensorServiceImpl final : public seed_rl::TensorService::Service {
         std::vector<Tensor> args(request.tensor_size());
         for (int i = 0; i < request.tensor_size(); ++i) {
 
-          CHECK(args[i].FromProto(request.tensor(i)));
+          if (!tp.ParseFromString(request.tensor(i))) {
+            status = Status(error::Code::INVALID_ARGUMENT,
+                            "Cannot parse TensorProto.");
+            break;
+          }
+          CHECK(args[i].FromProto(tp));
         }
 
         status = it->second(ctx, args, &rets);
@@ -163,8 +171,10 @@ class TensorServiceImpl final : public seed_rl::TensorService::Service {
 
       seed_rl::CallResponse result;
       if (status.ok()) {
+        TensorProto tp;
         for (const Tensor& t : rets) {
-          t.AsProtoTensorContent(result.add_tensor());
+          t.AsProtoTensorContent(&tp);
+          result.add_tensor(tp.SerializeAsString());
         }
       } else {
         result.set_status_code(status.code());
@@ -484,9 +494,8 @@ class GrpcServerBindOp : public OpKernel {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("output_shapes", &output_shapes));
     string output_spec_string;
     OP_REQUIRES_OK(ctx, ctx->GetAttr("output_specs", &output_spec_string));
-    OP_REQUIRES(ctx,
-                tensorflow::protobuf::TextFormat::ParseFromString(
-                    output_spec_string, &output_specs_),
+
+    OP_REQUIRES(ctx, output_specs_.ParseFromString(output_spec_string),
                 tensorflow::errors::InvalidArgument(
                     "Unable to parse StructuredValue output_spec string: ",
                     output_spec_string));
@@ -758,16 +767,8 @@ class CreateGrpcClientOp : public OpKernel {
                                              &method_output_signatures_t));
     auto method_output_signatures = method_output_signatures_t->vec<tstring>();
     for (int i = 0; i < method_output_signatures_list.size(); ++i) {
-      TStringOutputStream method_output_signatures_stream(
-          &method_output_signatures(i));
-      if (!tensorflow::protobuf::TextFormat::Print(
-              method_output_signatures_list[i],
-              &method_output_signatures_stream)) {
-        ctx->SetStatus(tensorflow::errors::InvalidArgument(
-            "Unable to convert MethodOutputSignature proto to string: ",
-            method_output_signatures_list[i].DebugString()));
-        return;
-      }
+      method_output_signatures(i) =
+          method_output_signatures_list[i].SerializeAsString();
     }
     OP_REQUIRES_OK(ctx, CreateResource(ctx, HandleFromInput(ctx, 0), resource));
   }
@@ -795,7 +796,9 @@ class GrpcClientCallOp : public OpKernel {
     seed_rl::CallRequest request;
     request.set_function(fn_name_);
     for (const Tensor& t : input_list) {
-      t.AsProtoTensorContent(request.add_tensor());
+      TensorProto tp;
+      t.AsProtoTensorContent(&tp);
+      request.add_tensor(tp.SerializeAsString());
     }
     OP_REQUIRES(ctx, resource->stream()->Write(request),
                 errors::Unavailable("Write failed, is the server closed?"));
@@ -809,7 +812,8 @@ class GrpcClientCallOp : public OpKernel {
 
     OP_REQUIRES(
         ctx, response.status_code() == error::OK,
-        Status(response.status_code(), response.status_error_message()));
+        Status(static_cast<tensorflow::error::Code>(response.status_code()),
+               response.status_error_message()));
 
     OP_REQUIRES(ctx, output_list.size() == response.tensor_size(),
                 errors::InvalidArgument("Number of outputs was ",
@@ -817,8 +821,11 @@ class GrpcClientCallOp : public OpKernel {
                                         " but expected ", output_list.size()));
 
     for (int i = 0; i < output_list.size(); ++i) {
+      TensorProto tp;
       Tensor output_tensor;
-      OP_REQUIRES(ctx, output_tensor.FromProto(response.tensor(i)),
+      OP_REQUIRES(ctx, tp.ParseFromString(response.tensor(i)),
+                  errors::Internal("Parsing of TensorProto failed."));
+      OP_REQUIRES(ctx, output_tensor.FromProto(tp),
                   errors::Internal("Parsing of TensorProto failed."));
       ctx->set_output(i, output_tensor);
     }

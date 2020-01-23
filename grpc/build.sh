@@ -1,3 +1,4 @@
+#!/bin/bash
 # Copyright 2019 The SEED Authors
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,9 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG grpc_image
-FROM $grpc_image
 
-ADD . .
+# Compiles the TF gRPC using Docker.
+# Usage: build.sh [Directory to grpc/ for grpc_cc.so and service_pb2.py]
+set -e
 
-ENTRYPOINT ["bash", "-c", "set -e; for x in `find /seed_rl/grpc/ -name *_test.py`; do PYTHONPATH=/ python3 $x; done"]
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
+docker build -t seed_rl:grpc -f $DIR/../docker/Dockerfile.grpc .
+
+id=$(docker create seed_rl:grpc)
+docker cp $id:/seed_rl/grpc/grpc_cc.so $1/grpc_cc.so
+docker cp $id:/seed_rl/grpc/service_pb2.py $1/service_pb2.py
+docker rm -v $id

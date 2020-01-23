@@ -16,10 +16,4 @@
 set -e
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd $DIR/..
-if "${USE_PREBUILD_GRPC_DOCKER_IMAGE:-true}"; then
-  GRPC_IMAGE=gcr.io/seedimages/seed:grpc
-else
-  docker build -t seed_rl:grpc -f docker/Dockerfile.grpc .
-  GRPC_IMAGE=seed_rl:grpc
-fi
-docker build --build-arg grpc_image=${GRPC_IMAGE} -t seed_rl:${CONFIG} -f docker/Dockerfile.${CONFIG} .
+docker build -t seed_rl:${CONFIG} -f docker/Dockerfile.${CONFIG} .

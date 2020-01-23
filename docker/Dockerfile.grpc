@@ -11,35 +11,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM tensorflow/tensorflow:custom-op-ubuntu16 as grpc_compile
-WORKDIR /
-RUN apt-get update && apt-get install -y \
-    git \
-    wget
+FROM tensorflow/tensorflow:nightly-custom-op-gpu-ubuntu16-cuda10.1 as grpc_compile
 
-ENV BUILD_FLAGS '-c opt --config=v2 --crosstool_top=//third_party/toolchains/preconfig/ubuntu16.04/gcc7_manylinux2010-nvcc-cuda10.0:toolchain'
-ENV CC_OPT_FLAGS='-mavx'
-ENV IS_NIGHTLY=0
-ENV PYTHON_BIN_PATH=/usr/bin/python3
+RUN git clone https://github.com/tensorflow/custom-op.git
+WORKDIR custom-op
 
-# Build GRPC layer.
-WORKDIR /
-RUN git clone https://github.com/tensorflow/tensorflow /tensorflow_src # Get the freshest tf nightly
-WORKDIR /tensorflow_src
-RUN python tensorflow/tools/ci_build/update_version.py --version=2.0.0-preview --nightly
-RUN yes "" | ./configure
-RUN mkdir -p /tensorflow_src/tensorflow/cc/seed_rl/grpc
-ADD grpc /tensorflow_src/tensorflow/cc/seed_rl/grpc
-WORKDIR /tensorflow_src/tensorflow/cc/seed_rl/grpc
-RUN bazel build $BUILD_FLAGS :grpc_cc.so :service_proto_py
+RUN pip install --pre tensorflow-gpu
+RUN ./configure.sh
 
+RUN echo '\n\
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")\n\
+\n\
+http_archive(\n\
+    name = "com_github_grpc_grpc",\n\
+    urls = [\n\
+        "https://github.com/grpc/grpc/archive/ac1c5de1b36da4a1e3d72ca40b0e43f24266121a.tar.gz",\n\
+    ],\n\
+    strip_prefix = "grpc-ac1c5de1b36da4a1e3d72ca40b0e43f24266121a",\n\
+)\n\
+\n\
+load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")\n\
+grpc_deps()\n\
+load("@com_github_grpc_grpc//bazel:grpc_extra_deps.bzl", "grpc_extra_deps")\n\
+grpc_extra_deps()' >> WORKSPACE
 
-FROM tensorflow/tensorflow:devel-gpu-py3
-RUN pip3 uninstall -y tf-nightly tensorflow tensorflow-gpu tf-nightly-gpu
-RUN pip3 install --upgrade tf-nightly-gpu-2.0-preview
-RUN mkdir -p /seed_rl/grpc/
-COPY --from=grpc_compile /tensorflow_src/bazel-bin/tensorflow/cc/seed_rl/grpc/grpc_cc.so /seed_rl/grpc/grpc_cc.so
-COPY --from=grpc_compile /tensorflow_src/bazel-bin/tensorflow/cc/seed_rl/grpc/service_pb2.py /seed_rl/grpc/service_pb2.py
+ADD grpc/ grpc/
+RUN bazel build grpc:ops/grpc.so grpc:service_py_proto --incompatible_remove_legacy_whole_archive=0
 
-ADD . /seed_rl/
-WORKDIR /seed_rl
+ADD . /seed_rl
+RUN cp bazel-bin/grpc/ops/grpc.so /seed_rl/grpc/grpc_cc.so
+RUN cp bazel-bin/grpc/service_pb2.py /seed_rl/grpc/service_pb2.py
+WORKDIR /seed_rl/
+RUN pip3 install tensorflow-gpu==2.1.0
+RUN PYTHONPATH=/ python3 grpc/python/ops_test.py

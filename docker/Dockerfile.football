@@ -11,8 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG grpc_image
-FROM $grpc_image as grpc
+FROM tensorflow/tensorflow:2.1.0-gpu-py3
 
 # Needed to disable interactive configuration by tzdata.
 RUN ln -fs /usr/share/zoneinfo/Europe/Dublin /etc/localtime
@@ -39,16 +38,9 @@ RUN apt-get update && apt-get install -y \
   libboost-python-dev \
   tmux
 
-# Install baselines
-RUN git clone https://github.com/openai/baselines.git /tmp/baselines
-WORKDIR /tmp/baselines
-RUN sed -i.bak -e "s@'tf-nightly-gpu'@'tf-nightly-gpu', 'tf-nightly-2.0-preview', 'tf-nightly-gpu-2.0-preview'@" setup.py
-RUN python3 setup.py install
-
 WORKDIR /
-RUN pip3 install gfootball==1.3
-# TODO: Move tensorflow_probability into Dockerfile.grpc
-RUN pip3 install tensorflow_probability
+RUN pip3 install gfootball==2.0.4
+RUN pip3 install tensorflow_probability==0.9.0
 
 # Copy SEED codebase and SEED GRPC library.
 ADD . /seed_rl/

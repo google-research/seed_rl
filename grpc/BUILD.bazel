@@ -1,0 +1,40 @@
+load("@com_github_grpc_grpc//bazel:cc_grpc_library.bzl", "cc_grpc_library")
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_proto_library")
+
+cc_binary(
+    name = 'ops/grpc.so',
+    srcs = [
+        "ops/grpc.cc",
+    ],
+    linkshared = 1,
+    deps = [
+        "@local_config_tf//:libtensorflow_framework",
+        "@local_config_tf//:tf_header_lib",
+        ":service",
+        "@com_github_grpc_grpc//:grpc++",
+        "@boringssl//:ssl",
+        "@boringssl//:crypto",
+    ],
+    copts = ["-pthread", "-std=c++11", "-D_GLIBCXX_USE_CXX11_ABI=0"],
+)
+cc_grpc_library(
+    name = "service",
+    srcs = [":service_proto"],
+    grpc_only = True,
+    deps = [":service_cc_proto"],
+)
+
+py_proto_library(
+    name = "service_py_proto",
+    deps = [":service_proto"],
+)
+
+cc_proto_library(
+    name = "service_cc_proto",
+    deps = [":service_proto"],
+)
+
+proto_library(
+    name = "service_proto",
+    srcs = ["service.proto"],
+)

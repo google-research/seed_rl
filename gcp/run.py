@@ -73,10 +73,6 @@ def main(_):
   logging.info(tf_config)
   config = json.loads(tf_config)
   job_type = config.get('task', {}).get('type')
-  new_env = {}
-  new_env[
-      'PYTHONPATH'] = '/tensorflow_src/bazel-bin/tensorflow/cc/seed_rl/grpc/ops_test.runfiles/org_tensorflow/:/'
-  os.environ.update(new_env)
   executor = concurrent.futures.ThreadPoolExecutor(
       max_workers=FLAGS.actors_per_worker)
   futures = []

@@ -11,7 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM tensorflow/tensorflow:nightly-custom-op-gpu-ubuntu16-cuda10.1 as grpc_compile
+FROM tensorflow/tensorflow:2.1.0-custom-op-gpu-ubuntu16 as grpc_compile
 
 RUN git clone https://github.com/tensorflow/custom-op.git
 WORKDIR custom-op

@@ -21,19 +21,21 @@ die () {
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd $DIR
 
-CONFIG=$1
+ENVIRONMENT=$1
+AGENT=$2
+shift 2
 WORKERS=4
 
 export PYTHONPATH=$PYTHONPATH:/
 
-ACTOR_BINARY="CUDA_VISIBLE_DEVICES='' python3 ../${CONFIG}/actor.py";
-LEARNER_BINARY="python3 ../${CONFIG}/learner.py";
+ACTOR_BINARY="CUDA_VISIBLE_DEVICES='' python3 ../${ENVIRONMENT}/${AGENT}_main.py --run_mode=actor";
+LEARNER_BINARY="python3 ../${ENVIRONMENT}/${AGENT}_main.py --run_mode=learner";
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 tmux new-session -d -t seed_rl
 mkdir -p /tmp/seed_rl
 cat >/tmp/seed_rl/instructions <<EOF
-Welcome to the SEED local training of ${CONFIG}.
+Welcome to the SEED local training of ${ENVIRONMENT} with ${AGENT}.
 SEED uses tmux for easy navigation between different tasks involved
 in the training process. To switch to a specific task, press CTRL+b, [tab id].
 You can stop training at any time by executing '../stop_local.sh'

@@ -63,10 +63,12 @@ cd seed_rl
 ## Local Machine Training on a Single Level
 
 To easily start with SEED we provide a way of running it on a local
-machine. You just need to run the following command:
+machine. You just need to run one of the following commands:
 
 ```shell
-./run_local.sh [atari|dmlab|football]
+./run_local.sh atari r2d2
+./run_local.sh football vtrace
+./run_local.sh dmlab vtrace
 ```
 
 It will build a Docker image using SEED source code and start the training

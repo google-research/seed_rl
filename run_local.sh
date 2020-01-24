@@ -19,17 +19,21 @@ die () {
     exit 1
 }
 
-CONFIGS="atari|dmlab|football"
-[ "$#" -ne 0 ] || die "Usage: run_local.sh [$CONFIGS]"
-echo $1 | grep -E -q $CONFIGS || die "Supported config: $CONFIGS"
-export CONFIG=$1
+ENVIRONMENTS="atari|dmlab|football"
+AGENTS="r2d2|vtrace"
+[ "$#" -ne 0 ] || die "Usage: run_local.sh [$ENVIRONMENTS] [$AGENTS]"
+echo $1 | grep -E -q $ENVIRONMENTS || die "Supported games: $ENVIRONMENTS"
+echo $2 | grep -E -q $AGENTS || die "Supported agents: $AGENTS"
+export ENVIRONMENT=$1
+export AGENT=$2
+export CONFIG=$ENVIRONMENT
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd $DIR
 docker/build.sh
 docker_version=$(docker version --format '{{.Server.Version}}')
 if [[ "19.03" > $docker_version ]]; then
-  docker run --entrypoint ./docker/run.sh -ti -it --name seed --rm seed_rl:$CONFIG $CONFIG
+  docker run --entrypoint ./docker/run.sh -ti -it --name seed --rm seed_rl:$ENVIRONMENT $ENVIRONMENT $AGENT
 else
-  docker run --gpus all --entrypoint ./docker/run.sh -ti -it -e HOST_PERMS="$(id -u):$(id -g)" --name seed --rm seed_rl:$CONFIG $CONFIG
+  docker run --gpus all --entrypoint ./docker/run.sh -ti -it -e HOST_PERMS="$(id -u):$(id -g)" --name seed --rm seed_rl:$ENVIRONMENT $ENVIRONMENT $AGENT
 fi

@@ -18,8 +18,9 @@
 set -e
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+cd $DIR
 
-docker build -t seed_rl:grpc -f $DIR/../docker/Dockerfile.grpc .
+CONFIG=grpc ../docker/build.sh
 
 id=$(docker create seed_rl:grpc)
 docker cp $id:/seed_rl/grpc/grpc_cc.so $1/grpc_cc.so

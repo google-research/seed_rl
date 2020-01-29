@@ -42,11 +42,12 @@ def init_learner(num_training_tpus):
     resolver = tf.distribute.cluster_resolver.TPUClusterResolver('')
     topology = tf.tpu.experimental.initialize_tpu_system(resolver)
     strategy = tf.distribute.experimental.TPUStrategy(resolver)
-    inference_devices = strategy.extended.worker_devices[num_training_tpus:]
     training_da = tf.tpu.experimental.DeviceAssignment.build(
         topology, num_replicas=num_training_tpus)
     training_strategy = tf.distribute.experimental.TPUStrategy(
         resolver, device_assignment=training_da)
+    inference_devices = list(set(strategy.extended.worker_devices) -
+                             set(training_strategy.extended.worker_devices))
     return Settings(strategy, inference_devices, training_strategy, tpu_encode,
                     tpu_decode)
   else:

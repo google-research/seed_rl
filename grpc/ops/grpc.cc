@@ -720,17 +720,31 @@ class GrpcClientResource : public ResourceBase {
       method_output_signature_list->push_back(method_output_signature);
     }
 
-
+    mutex_lock lock(call_mu_);
     stream_ = stub_->Call(&ctx_);
     return grpc::Status::OK;
   }
 
-  ReaderWriter* stream() { return stream_.get(); }
+  Status Call(const seed_rl::CallRequest& request,
+              seed_rl::CallResponse* response) {
+
+    mutex_lock lock(call_mu_);
+    if (!this->stream_->Write(request)) {
+      return errors::Unavailable("Write failed, is the server closed?");
+    }
+
+    if (!this->stream_->Read(response)) {
+      return errors::Unavailable("Read failed, is the server closed?");
+    }
+
+    return Status::OK();
+  }
 
  private:
   std::unique_ptr<seed_rl::TensorService::Stub> stub_;
   grpc::ClientContext ctx_;
-  std::unique_ptr<ReaderWriter> stream_;
+  std::unique_ptr<ReaderWriter> stream_ GUARDED_BY(call_mu_);
+  mutex call_mu_;
 };
 
 REGISTER_RESOURCE_HANDLE_KERNEL(GrpcClientResource);
@@ -800,12 +814,9 @@ class GrpcClientCallOp : public OpKernel {
       t.AsProtoTensorContent(&tp);
       request.add_tensor(tp.SerializeAsString());
     }
-    OP_REQUIRES(ctx, resource->stream()->Write(request),
-                errors::Unavailable("Write failed, is the server closed?"));
 
     seed_rl::CallResponse response;
-    OP_REQUIRES(ctx, resource->stream()->Read(&response),
-                errors::Unavailable("Read failed, is the server closed?"));
+    OP_REQUIRES_OK(ctx, resource->Call(request, &response));
 
     OpOutputList output_list;
     OP_REQUIRES_OK(ctx, ctx->output_list("output_list", &output_list));

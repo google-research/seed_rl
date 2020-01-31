@@ -73,6 +73,7 @@ def main(_):
   logging.info(tf_config)
   config = json.loads(tf_config)
   job_type = config.get('task', {}).get('type')
+  os.environ.update({'PYTHONPATH': '/'})
   executor = concurrent.futures.ThreadPoolExecutor(
       max_workers=FLAGS.actors_per_worker)
   futures = []

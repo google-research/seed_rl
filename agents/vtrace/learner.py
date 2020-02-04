@@ -62,7 +62,7 @@ flags.DEFINE_float('max_abs_reward', 0.,
 flags.DEFINE_integer('num_actors', 4, 'Number of actors.')
 
 # Logging
-flags.DEFINE_integer('log_batch_frequency', 1, 'We average that many batches '
+flags.DEFINE_integer('log_batch_frequency', 100, 'We average that many batches '
                      'before logging batch statistics like entropy.')
 flags.DEFINE_integer('log_episode_frequency', 1, 'We average that many episodes'
                      ' before logging average episode return and length.')

@@ -298,14 +298,16 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
       tf.TensorSpec([], tf.float32, 'episode_returns'),
       tf.TensorSpec([], tf.float32, 'episode_raw_returns'),
   )
-  actor_infos = utils.Aggregator(FLAGS.num_actors, info_specs)
+  actor_infos = utils.Aggregator(FLAGS.num_actors, info_specs, 'actor_infos')
 
   # First agent state in an unroll.
-  first_agent_states = utils.Aggregator(FLAGS.num_actors, agent_state_specs)
+  first_agent_states = utils.Aggregator(
+      FLAGS.num_actors, agent_state_specs, 'first_agent_states')
 
   # Current agent state and action.
-  agent_states = utils.Aggregator(FLAGS.num_actors, agent_state_specs)
-  actions = utils.Aggregator(FLAGS.num_actors, action_specs)
+  agent_states = utils.Aggregator(
+      FLAGS.num_actors, agent_state_specs, 'agent_states')
+  actions = utils.Aggregator(FLAGS.num_actors, action_specs, 'actions')
 
   unroll_specs = Unroll(agent_state_specs, *store.unroll_specs)
   unroll_queue = utils.StructuredFIFOQueue(1, unroll_specs)

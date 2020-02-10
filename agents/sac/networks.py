@@ -50,11 +50,9 @@ class ActorCriticMLP(tf.Module):
     self._q_mlp = [create_mlp(mlp_sizes + [1]) for _ in range(n_critics)]
     self._v_mlp = create_mlp(mlp_sizes + [1])
 
-  @tf.function
   def initial_state(self, batch_size):
     return ()
 
-  @tf.function
   def get_Q(self, env_output, prev_action, state, action):
     """Computes state-action values.
 
@@ -80,7 +78,6 @@ class ActorCriticMLP(tf.Module):
     return tf.concat(values=[critic(input_) for critic in self._q_mlp],
                      axis=-1)
 
-  @tf.function
   def get_V(self, env_output, prev_action, state):
     """Returns state values.
 
@@ -89,7 +86,6 @@ class ActorCriticMLP(tf.Module):
     """
     return tf.squeeze(self._v_mlp(env_output.observation), axis=-1)
 
-  @tf.function
   def get_action_params(self, env_output, prev_action, state):
     """Returns action distribution parameters (i.e. actor network outputs).
 
@@ -98,7 +94,6 @@ class ActorCriticMLP(tf.Module):
     """
     return self._actor_mlp(env_output.observation)
 
-  @tf.function
   def __call__(self, env_output, prev_action, state, unroll=False,
                is_training=False):
     """Runs the agent.
@@ -222,7 +217,6 @@ class ActorCriticLSTM(tf.Module):
     self._q_nets = [create_net(1) for _ in range(n_critics)]
     self._networks = [self._actor_net, self._v_net] + self._q_nets
 
-  @tf.function
   def initial_state(self, batch_size):
     return [net.initial_state(batch_size) for net in self._networks]
 
@@ -240,7 +234,6 @@ class ActorCriticLSTM(tf.Module):
                done=env_output.done,
                only_return_new_state=only_return_new_state)
 
-  @tf.function
   def get_Q(self, env_output, prev_action, state, action):
     """Computes state-action values.
 
@@ -263,7 +256,6 @@ class ActorCriticLSTM(tf.Module):
                 for (net, net_state) in zip(self._q_nets, state[2:])]
     return tf.concat(values=q_values, axis=-1)
 
-  @tf.function
   def get_V(self, env_output, prev_action, state):
     """Returns state values.
 
@@ -274,7 +266,6 @@ class ActorCriticLSTM(tf.Module):
                       ff_input=env_output.observation)[0]
     return tf.squeeze(v, axis=-1)
 
-  @tf.function
   def get_action_params(self, env_output, prev_action, state):
     """Returns action distribution parameters (i.e. actor network outputs).
 
@@ -285,7 +276,6 @@ class ActorCriticLSTM(tf.Module):
                          state=state[0],
                          ff_input=env_output.observation)[0]
 
-  @tf.function
   def __call__(self, env_output, prev_action, state, unroll=False,
                is_training=False):
     """Runs the agent.

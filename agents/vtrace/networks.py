@@ -48,7 +48,6 @@ class MLPandLSTM(tf.Module):
         parametric_action_distribution.param_size, name='policy_logits')
     self._baseline = tf.keras.layers.Dense(1, name='baseline')
 
-  @tf.function
   def initial_state(self, batch_size):
     return self._core.get_initial_state(batch_size=batch_size, dtype=tf.float32)
 
@@ -61,7 +60,6 @@ class MLPandLSTM(tf.Module):
 
     return AgentOutput(action, policy_logits, baseline)
 
-  @tf.function
   def __call__(self, input_, core_state, unroll=False,
                is_training=False):
     if not unroll:

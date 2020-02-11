@@ -18,6 +18,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import collections
 import types
 
 from seed_rl.grpc import service_pb2
@@ -61,40 +62,47 @@ class Server(object):
     """Binds a tf.function to the server.
 
     Args:
-      fn: The @tf.function wrapped function. `input_signature` must be set.
+      fn: The @tf.function wrapped function or a list of such functions, with
+        `input_signature` set. When a list of functions is provided,
+        they are called in a round-robin manner.
       batched: If True, the function is batched and the first dimension is the
         batch dimension.
 
     Returns:
       A tf.Operation.
     """
-    if fn.input_signature is None:
-      raise ValueError("tf.function must have input_signature set.")
+    if not isinstance(fn, collections.Iterable):
+      fn = [fn]
+
+    for i, f in enumerate(fn):
+      if f.input_signature is None:
+        raise ValueError("tf.function must have input_signature set.")
 
 
-    self._keep_alive.append(fn.python_function)
+      self._keep_alive.append(f.python_function)
 
-    fn_name = fn.__name__
-    fn = fn.get_concrete_function()
-    input_shapes = [
-        t.shape for t in tf.nest.flatten(fn.structured_input_signature)
-    ]
-    if fn.structured_outputs is None:
-      output_specs = None
-    else:
-      output_specs = tf.nest.map_structure(type_spec.type_spec_from_value,
-                                           fn.structured_outputs)
-    encoder = nested_structure_coder.StructureCoder()
-    output_specs_proto = encoder.encode_structure(output_specs)
-    return gen_grpc_ops.grpc_server_bind(
-        handle=self._handle,
-        captures=fn.captured_inputs,
-        fn_name=fn_name,
-        fn=fn,
-        input_shapes=input_shapes,
-        output_shapes=tf.nest.flatten(fn.output_shapes),
-        output_specs=output_specs_proto.SerializeToString(),
-        batched=batched)
+      fn_name = f.__name__
+      f = f.get_concrete_function()
+      input_shapes = [
+          t.shape for t in tf.nest.flatten(f.structured_input_signature)
+      ]
+      if f.structured_outputs is None:
+        output_specs = None
+      else:
+        output_specs = tf.nest.map_structure(type_spec.type_spec_from_value,
+                                             f.structured_outputs)
+      encoder = nested_structure_coder.StructureCoder()
+      output_specs_proto = encoder.encode_structure(output_specs)
+      gen_grpc_ops.grpc_server_bind(
+          handle=self._handle,
+          captures=f.captured_inputs,
+          fn_name=fn_name,
+          fn=f,
+          first_bind=(i == 0),
+          input_shapes=input_shapes,
+          output_shapes=tf.nest.flatten(f.output_shapes),
+          output_specs=output_specs_proto.SerializeToString(),
+          batched=batched)
 
   def start(self):
     return gen_grpc_ops.grpc_server_start(handle=self._handle)

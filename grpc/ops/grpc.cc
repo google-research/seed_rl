@@ -76,6 +76,7 @@ REGISTER_OP("GrpcServerBind")
     .Attr("output_shapes: list(shape)")
     .Attr("output_specs: string")
     .Attr("batched: bool")
+    .Attr("first_bind: bool")
     .SetShapeFn(shape_inference::NoOutputs)
     .Doc(R"doc(
 Binds a tf.function to a call.
@@ -165,8 +166,9 @@ class TensorServiceImpl final : public seed_rl::TensorService::Service {
           }
           CHECK(args[i].FromProto(tp));
         }
-
-        status = it->second(ctx, args, &rets);
+        auto& bucket = it->second;
+        status = bucket[call_counter_++ % bucket.size()](
+            ctx, args, &rets);
       }
 
       seed_rl::CallResponse result;
@@ -186,24 +188,26 @@ class TensorServiceImpl final : public seed_rl::TensorService::Service {
   }
 
   Status Bind(const string& fn_name, tensorflow::StructuredValue& output_specs,
-              FnType&& fn) {
-    if (fns_.contains(fn_name)) {
+              FnType&& fn, bool first_bind) {
+    if (first_bind && fns_.contains(fn_name)) {
       return errors::InvalidArgument("Function '", fn_name,
                                      "' was bound twice.");
     }
-
-    output_specs_list_.push_back(std::make_pair(fn_name, output_specs));
-    fns_[fn_name] = std::forward<FnType>(fn);
-
+    auto& bucket = fns_[fn_name];
+    if (bucket.empty()) {
+      output_specs_list_.push_back(std::make_pair(fn_name, output_specs));
+    }
+    bucket.push_back(std::forward<FnType>(fn));
     return Status::OK();
   }
 
   bool is_bound() const { return !output_specs_list_.empty(); }
 
  private:
-  absl::flat_hash_map<string, FnType> fns_;
+  absl::flat_hash_map<string, std::vector<FnType>> fns_;
   std::vector<std::pair<string, tensorflow::StructuredValue>>
       output_specs_list_;
+  std::atomic_int call_counter_{0};
 };
 
 class GrpcServerResource : public ResourceBase {
@@ -501,6 +505,7 @@ class GrpcServerBindOp : public OpKernel {
                     output_spec_string));
 
     OP_REQUIRES_OK(ctx, ctx->GetAttr("batched", &batched_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("first_bind", &first_bind_));
 
     if (batched_) {
       OP_REQUIRES(
@@ -598,7 +603,8 @@ class GrpcServerBindOp : public OpKernel {
                           std::move(input_shapes_), std::move(captures),
                           resource);
       OP_REQUIRES_OK(
-          ctx, resource->service()->Bind(fn_name_, output_specs_, batched_f));
+          ctx, resource->service()->Bind(fn_name_, output_specs_, batched_f,
+                                         first_bind_));
     } else {
       auto input_shapes = std::move(input_shapes_);
       auto fn = [resource, captures, lib, f_handle, input_types, input_shapes,
@@ -635,7 +641,8 @@ class GrpcServerBindOp : public OpKernel {
         return status;
       };
       OP_REQUIRES_OK(ctx,
-                     resource->service()->Bind(fn_name_, output_specs_, fn));
+                     resource->service()->Bind(fn_name_, output_specs_, fn,
+                                               first_bind_));
     }
   }
 
@@ -645,6 +652,7 @@ class GrpcServerBindOp : public OpKernel {
   std::vector<TensorShape> input_shapes_;
   tensorflow::StructuredValue output_specs_;
   bool batched_;
+  bool first_bind_;
 
   TF_DISALLOW_COPY_AND_ASSIGN(GrpcServerBindOp);
 };

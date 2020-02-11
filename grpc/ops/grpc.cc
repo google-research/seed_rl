@@ -126,7 +126,7 @@ namespace {
 
 class FnType {
  public:
-  virtual void operator()(
+  virtual bool operator()(
       ServerContext* server_ctx, gtl::ArraySlice<Tensor> args,
       std::function<void(Status, std::vector<Tensor>)> callback) = 0;
 
@@ -187,7 +187,10 @@ class TensorHandler final {
       outer_callback(status, {});
     } else {
       auto& bucket = it->second;
-      (*bucket[call_counter_++ % bucket.size()])(ctx, args, outer_callback);
+      if ((*bucket.fn[bucket.call_counter_ % bucket.fn.size()])(
+              ctx, args, outer_callback)) {
+        bucket.call_counter_++;
+      }
     }
   }
 
@@ -198,16 +201,16 @@ class TensorHandler final {
                                      "' was bound twice.");
     }
     auto& bucket = fns_[fn_name];
-    if (bucket.empty()) {
+    if (bucket.fn.empty()) {
       output_specs_list_.push_back(std::make_pair(fn_name, output_specs));
     }
-    bucket.push_back(std::move(fn));
+    bucket.fn.push_back(std::move(fn));
     return Status::OK();
   }
 
   void Shutdown() {
     for (auto& list : fns_) {
-      for (auto& f : list.second) {
+      for (auto& f : list.second.fn) {
         f->Shutdown();
       }
     }
@@ -216,10 +219,14 @@ class TensorHandler final {
   bool is_bound() const { return !output_specs_list_.empty(); }
 
  private:
-  absl::flat_hash_map<string, std::vector<std::unique_ptr<FnType>>> fns_;
+  struct FnBucket {
+    std::vector<std::unique_ptr<FnType>> fn;
+    int call_counter_ = 0;
+  };
+
+  absl::flat_hash_map<string, FnBucket> fns_;
   std::vector<std::pair<string, tensorflow::StructuredValue>>
       output_specs_list_;
-  std::atomic_int call_counter_{0};
 };
 
 struct ProcessorContext {
@@ -535,13 +542,13 @@ class DirectFn : public FnType {
         captures_(std::move(captures)),
         resource_(resource) {}
 
-  void operator()(
+  bool operator()(
       ServerContext* server_ctx, gtl::ArraySlice<Tensor> args,
       std::function<void(Status, std::vector<Tensor>)> callback) override {
     Status status = verify_args(input_types_, input_shapes_, args);
     if (!status.ok()) {
       callback(status, {});
-      return;
+      return false;
     }
     FunctionLibraryRuntime::Options f_opts;
     f_opts.create_rendezvous = true;
@@ -553,7 +560,7 @@ class DirectFn : public FnType {
 
     if (!status.ok()) {
       callback(status, {});
-      return;
+      return false;
     }
 
     f_opts.cancellation_manager = c_mgr.get();
@@ -567,6 +574,7 @@ class DirectFn : public FnType {
               [callback, rets, c_mgr](Status f_status) {
                 callback(f_status, *rets);
               });
+    return true;
   }
 
   void Shutdown() override {}
@@ -603,13 +611,13 @@ class BatchedFn : public FnType {
     }
   }
 
-  void operator()(
+  bool operator()(
       ServerContext* server_ctx, gtl::ArraySlice<Tensor> args,
       std::function<void(Status, std::vector<Tensor>)> callback) override {
     Status status = verify_args(input_types_, arg_shapes_, args);
     if (!status.ok()) {
       callback(status, {});
-      return;
+      return false;
     }
 
     int64 index;
@@ -698,7 +706,9 @@ class BatchedFn : public FnType {
       };
       lib_->Run(f_opts, f_handle_, computation->request, &computation->outputs,
                 f_callback);
+      return true;
     }
+    return false;
   }
 
   void Shutdown() override {
@@ -855,9 +865,8 @@ class GrpcServerBindOp : public OpKernel {
           lib, f_handle, std::move(input_types), std::move(input_shapes_),
           std::move(captures), resource)));
     } else {
-      auto input_shapes = std::move(input_shapes_);
       func.reset(static_cast<FnType*>(new DirectFn(
-          lib, f_handle, std::move(input_types), std::move(input_shapes),
+          lib, f_handle, std::move(input_types), std::move(input_shapes_),
           std::move(captures), resource)));
     }
     OP_REQUIRES_OK(ctx, resource->tensor_handler()->Bind(

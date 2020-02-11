@@ -34,15 +34,17 @@
 #include "tensorflow/core/framework/resource_op_kernel.h"
 #include "tensorflow/core/framework/shape_inference.h"
 #include "tensorflow/core/framework/tensor.h"
-#include "tensorflow/core/protobuf/struct.pb.h"
 #include "tensorflow/core/framework/tensor.pb.h"
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/lib/core/error_codes.pb.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/core/status.h"
+#include "tensorflow/core/lib/core/threadpool.h"
 #include "tensorflow/core/lib/gtl/array_slice.h"
+#include "tensorflow/core/platform/errors.h"
 #include "tensorflow/core/platform/protobuf.h"
+#include "tensorflow/core/protobuf/struct.pb.h"
 #include "tensorflow/core/util/batch_util.h"
 
 namespace tensorflow {
@@ -123,72 +125,75 @@ Calls the server.
 
 namespace {
 
-class TensorServiceImpl final : public seed_rl::TensorService::Service {
+class FnType {
  public:
-  typedef std::function<Status(ServerContext*, gtl::ArraySlice<Tensor>,
-                               std::vector<Tensor>*)>
-      FnType;
+  virtual void operator()(
+      ServerContext* server_ctx, gtl::ArraySlice<Tensor> args,
+      std::function<void(Status, std::vector<Tensor>)> callback) = 0;
 
-  explicit TensorServiceImpl() {}
+  virtual void Shutdown() = 0;
 
-  grpc::Status Init(ServerContext* ctx, const seed_rl::InitRequest* request,
-                    seed_rl::InitResponse* response) override {
+  virtual ~FnType() {}
+};
+
+class TensorHandler final {
+ public:
+  explicit TensorHandler() {}
+
+  void Init(ServerContext* ctx, const seed_rl::InitRequest* request,
+            seed_rl::InitResponse* response) {
     for (auto& output_specs : output_specs_list_) {
       auto* signature = response->add_method_output_signature();
       signature->set_name(output_specs.first);
       *signature->mutable_output_specs() =
           output_specs.second.SerializeAsString();
     }
-    return grpc::Status::OK;
   }
 
-  grpc::Status Call(ServerContext* ctx,
-                    ServerReaderWriter<seed_rl::CallResponse,
-                                       seed_rl::CallRequest>* stream) override {
-    seed_rl::CallRequest request;
-    TensorProto tp;
-    while (stream->Read(&request)) {
-      auto it = fns_.find(request.function());
-
-      Status status;
-      std::vector<Tensor> rets;
-      if (it == fns_.end()) {
-        status =
-            errors::Internal("Function ", request.function(), " not found");
-      } else {
-        std::vector<Tensor> args(request.tensor_size());
-        for (int i = 0; i < request.tensor_size(); ++i) {
-
-          if (!tp.ParseFromString(request.tensor(i))) {
-            status = Status(error::Code::INVALID_ARGUMENT,
-                            "Cannot parse TensorProto.");
-            break;
-          }
-          CHECK(args[i].FromProto(tp));
-        }
-        auto& bucket = it->second;
-        status = bucket[call_counter_++ % bucket.size()](
-            ctx, args, &rets);
-      }
-
-      seed_rl::CallResponse result;
+  void Call(ServerContext* ctx, const seed_rl::CallRequest* request,
+            seed_rl::CallResponse* response, std::function<void()> callback) {
+    auto outer_callback = [response, callback](
+                              Status status, std::vector<Tensor> rets) {
       if (status.ok()) {
         TensorProto tp;
         for (const Tensor& t : rets) {
           t.AsProtoTensorContent(&tp);
-          result.add_tensor(tp.SerializeAsString());
+          response->add_tensor(tp.SerializeAsString());
         }
       } else {
-        result.set_status_code(status.code());
-        result.set_status_error_message(status.error_message());
+        response->set_status_code(status.code());
+        response->set_status_error_message(status.error_message());
       }
-      stream->Write(result);
+      callback();
+    };
+
+    TensorProto tp;
+    Status status;
+    std::vector<Tensor> args(request->tensor_size());
+    for (int i = 0; i < request->tensor_size(); ++i) {
+
+      if (!tp.ParseFromString(request->tensor(i))) {
+        status =
+            Status(error::Code::INVALID_ARGUMENT, "Cannot parse TensorProto.");
+        outer_callback(status, {});
+        return;
+      }
+      CHECK(args[i].FromProto(tp));
     }
-    return grpc::Status::OK;
+
+    auto it = fns_.find(request->function());
+    if (it == fns_.end()) {
+      Status status =
+          errors::Internal("Function ", request->function(), " not found");
+      outer_callback(status, {});
+    } else {
+      auto& bucket = it->second;
+      (*bucket[call_counter_++ % bucket.size()])(ctx, args, outer_callback);
+    }
   }
 
   Status Bind(const string& fn_name, tensorflow::StructuredValue& output_specs,
-              FnType&& fn, bool first_bind) {
+              std::unique_ptr<FnType> fn, bool first_bind) {
     if (first_bind && fns_.contains(fn_name)) {
       return errors::InvalidArgument("Function '", fn_name,
                                      "' was bound twice.");
@@ -197,78 +202,262 @@ class TensorServiceImpl final : public seed_rl::TensorService::Service {
     if (bucket.empty()) {
       output_specs_list_.push_back(std::make_pair(fn_name, output_specs));
     }
-    bucket.push_back(std::forward<FnType>(fn));
+    bucket.push_back(std::move(fn));
     return Status::OK();
+  }
+
+  void Shutdown() {
+    for (auto& list : fns_) {
+      for (auto& f : list.second) {
+        f->Shutdown();
+      }
+    }
   }
 
   bool is_bound() const { return !output_specs_list_.empty(); }
 
  private:
-  absl::flat_hash_map<string, std::vector<FnType>> fns_;
+  absl::flat_hash_map<string, std::vector<std::unique_ptr<FnType>>> fns_;
   std::vector<std::pair<string, tensorflow::StructuredValue>>
       output_specs_list_;
   std::atomic_int call_counter_{0};
 };
 
+struct ProcessorContext {
+  std::thread polling_thread;
+  std::unique_ptr<grpc::ServerCompletionQueue> cq;
+  mutex mu_;
+  bool is_shutdown_ GUARDED_BY(mu_) = false;
+  // Make sure there is only a single mutex per CPU cache line.
+  char allign_to_64[32];
+};
+
+struct InitializedServer {
+  InitializedServer(TensorHandler* handler, int size)
+      : handler(handler), size(size) {
+    states = new ProcessorContext[size];
+  }
+
+  ~InitializedServer() { delete[] states; }
+
+  void Shutdown() {
+    for (int x = 0; x < size; x++) {
+      mutex_lock lock(states[x].mu_);
+      states[x].is_shutdown_ = true;
+      states[x].cq->Shutdown();
+    }
+    handler->Shutdown();
+  }
+
+  void Join() {
+    for (int x = 0; x < size; x++) {
+      states[x].polling_thread.join();
+    }
+  }
+
+  TensorHandler* handler;
+  ProcessorContext* states;
+  std::unique_ptr<Server> server;
+  ServerBuilder builder;
+  seed_rl::TensorService::AsyncService service;
+  CancellationManager c_mgr;
+  int size;
+};
+
+class Tag {
+ public:
+  virtual void Proceed() = 0;
+  virtual string name() const = 0;
+  virtual ~Tag() {}
+};
+
+class InitData : Tag {
+ public:
+  InitData(std::shared_ptr<InitializedServer> server, int cq_id)
+      : server_(server), cq_id_(cq_id), responder_(&ctx_) {
+    server->service.RequestInit(&ctx_, &request_, &responder_,
+                                server_->states[cq_id].cq.get(),
+                                server_->states[cq_id].cq.get(), this);
+  }
+
+  void Proceed() override {
+    if (status_ == PROCESS) {
+      new InitData(server_, cq_id_);
+      server_->handler->Init(&ctx_, &request_, &response_);
+      status_ = FINISH;
+      responder_.Finish(response_, grpc::Status::OK, this);
+    } else {
+      GPR_ASSERT(status_ == FINISH);
+      delete this;
+    }
+  }
+
+  string name() const override { return "Init"; }
+
+ private:
+  std::shared_ptr<InitializedServer> server_;
+  int cq_id_;
+  ServerContext ctx_;
+  seed_rl::InitRequest request_;
+  seed_rl::InitResponse response_;
+  grpc::ServerAsyncResponseWriter<seed_rl::InitResponse> responder_;
+  enum CallStatus { PROCESS, FINISH };
+  CallStatus status_{PROCESS};  // The current serving state.
+};
+
+class CallData : Tag {
+ public:
+  CallData(std::shared_ptr<InitializedServer> server, int cq_id)
+      : server_(server), cq_id_(cq_id), responder_(&ctx_) {
+    server_->service.RequestCall(&ctx_, &responder_,
+                                 server_->states[cq_id].cq.get(),
+                                 server_->states[cq_id].cq.get(), this);
+  }
+
+  void Proceed() override {
+    if (status_ == PROCESS) {
+      mutex_lock lock(server_->states[cq_id_].mu_);
+      new CallData(server_, cq_id_);
+      status_ = READ;
+      responder_.Read(&request_, this);
+    } else if (status_ == READ) {
+      response_.Clear();
+      server_->handler->Call(&ctx_, &request_, &response_, [this]() {
+        {
+          mutex_lock lock(server_->states[cq_id_].mu_);
+          if (!server_->states[cq_id_].is_shutdown_) {
+            status_ = WRITE;
+            responder_.Write(response_, this);
+            return;
+          }
+        }
+        delete this;
+      });
+    } else /** if (status_ == WRITE) **/ {
+      mutex_lock lock(server_->states[cq_id_].mu_);
+      status_ = READ;
+      responder_.Read(&request_, this);
+    }
+  }
+
+  string name() const override { return "CallData"; }
+
+ private:
+  std::shared_ptr<InitializedServer> server_;
+  int cq_id_;
+  ServerContext ctx_;
+  seed_rl::CallRequest request_;
+  seed_rl::CallResponse response_;
+  grpc::ServerAsyncReaderWriter<seed_rl::CallResponse, seed_rl::CallRequest>
+      responder_;
+  enum CallStatus { PROCESS, READ, WRITE };
+  CallStatus status_ = PROCESS;  // The current serving state.
+};
+
 class GrpcServerResource : public ResourceBase {
  public:
-  GrpcServerResource()
-      : ResourceBase(),
-        builder_(absl::make_unique<ServerBuilder>()),
-        service_(absl::make_unique<TensorServiceImpl>()) {}
+  GrpcServerResource(
+      std::vector<std::pair<string, std::shared_ptr<grpc::ServerCredentials>>>
+          ports)
+
+      : ResourceBase(), ports_(ports), num_polling_threads_(26) {}
 
   string DebugString() const override { return "gRPC Server"; }
 
-  ServerBuilder* builder() { return builder_.get(); }
-
-  TensorServiceImpl* service() { return service_.get(); }
+  TensorHandler* tensor_handler() { return &handler_; }
 
   Status create_child_cancellation_manager(
-      CancellationManager* child, std::function<void()>* deregister_fn) {
-    CHECK(c_mgr_.get() != nullptr);
+      std::shared_ptr<CancellationManager>* child,
+      std::shared_ptr<std::function<void()>>* deregister_fn) {
+    *child = std::make_shared<CancellationManager>();
+    auto childv = *child;
+    CHECK(initialized_server_ != nullptr);
 
-    CancellationToken token = c_mgr_->get_cancellation_token();
-    if (!c_mgr_->RegisterCallback(token, [child]() { child->StartCancel(); })) {
+    auto& c_mgr = initialized_server_->c_mgr;
+    CancellationToken token = c_mgr.get_cancellation_token();
+    if (!c_mgr.RegisterCallback(token, [childv]() { childv->StartCancel(); })) {
       return errors::Cancelled("Operation was cancelled");
     }
-    *deregister_fn = [this, token]() { c_mgr_->DeregisterCallback(token); };
+    *deregister_fn = std::make_shared<std::function<void()>>(
+        [&c_mgr, childv, token]() { c_mgr.DeregisterCallback(token); });
 
     return Status::OK();
   }
 
   Status BuildAndStartSever() {
-    if (!service_->is_bound()) {
+    if (!tensor_handler()->is_bound()) {
       return errors::Unavailable("No function was bound");
     }
 
-    if (server_ != nullptr) {
+    if (initialized_server_) {
       return errors::InvalidArgument("Server is already started");
     }
 
-    c_mgr_ = absl::make_unique<CancellationManager>();
-    server_ = builder_->BuildAndStart();
+    initialized_server_ =
+        std::make_shared<InitializedServer>(&handler_, num_polling_threads_);
 
+    initialized_server_->builder.SetMaxReceiveMessageSize(
+        std::numeric_limits<int32>::max());
+    initialized_server_->builder.SetMaxSendMessageSize(
+        std::numeric_limits<int32>::max());
+
+    for (auto& t : ports_) {
+      initialized_server_->builder.AddListeningPort(t.first, t.second);
+    }
+
+    for (int i = 0; i < num_polling_threads_; ++i) {
+      initialized_server_->states[i].cq =
+          initialized_server_->builder.AddCompletionQueue();
+    }
+
+    initialized_server_->builder.RegisterService(&initialized_server_->service);
+
+    initialized_server_->server = initialized_server_->builder.BuildAndStart();
+
+    for (int i = 0; i < num_polling_threads_; ++i) {
+      auto polling_fn = [this, i]() {
+        auto& cq = initialized_server_->states[i].cq;
+        new CallData(initialized_server_, i);
+        new InitData(initialized_server_, i);
+        void* untyped_tag;
+        bool ok;
+        while (cq->Next(&untyped_tag, &ok)) {
+          Tag* tag = static_cast<Tag*>(untyped_tag);
+          if (ok) {
+            tag->Proceed();
+          } else {
+            delete tag;
+          }
+        }
+      };
+      initialized_server_->states[i].polling_thread = std::thread(polling_fn);
+    }
     return Status::OK();
   }
 
   void ShutdownServer() {
-    c_mgr_->StartCancel();
-    server_->Shutdown(std::chrono::system_clock::now());
-    c_mgr_.reset();
-    server_.reset();
+    initialized_server_->c_mgr.StartCancel();
+    initialized_server_->server->Shutdown(std::chrono::system_clock::now());
+    initialized_server_->Shutdown();
+    initialized_server_->Join();
+    while (initialized_server_.use_count() > 1) {
+      LOG(INFO) << "Waiting for all pending ops to terminate.";
+      usleep(10000);
+    }
+    initialized_server_.reset();
   }
 
   ~GrpcServerResource() override {
-    if (server_ != nullptr) {
+    if (initialized_server_) {
       ShutdownServer();
     }
   }
 
- private:
-  std::unique_ptr<Server> server_;
-  std::unique_ptr<ServerBuilder> builder_;
-  std::unique_ptr<TensorServiceImpl> service_;
-  std::unique_ptr<CancellationManager> c_mgr_;
+  std::vector<std::pair<string, std::shared_ptr<grpc::ServerCredentials>>>
+      ports_;
+  const int num_polling_threads_;
+  std::shared_ptr<InitializedServer> initialized_server_;
+  TensorHandler handler_;
 };
 
 REGISTER_RESOURCE_HANDLE_KERNEL(GrpcServerResource);
@@ -278,10 +467,10 @@ class CreateGrpcServerOp : public OpKernel {
   explicit CreateGrpcServerOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
 
   void Compute(OpKernelContext* ctx) override {
-    auto resource = new GrpcServerResource();
-
     auto insecure_creds = grpc::InsecureServerCredentials();
 
+    std::vector<std::pair<string, std::shared_ptr<grpc::ServerCredentials>>>
+        ports;
     const Tensor* server_addresses_t;
     OP_REQUIRES_OK(ctx, ctx->input("server_addresses", &server_addresses_t));
     OP_REQUIRES(ctx, TensorShapeUtils::IsVector(server_addresses_t->shape()),
@@ -292,13 +481,10 @@ class CreateGrpcServerOp : public OpKernel {
     for (int i = 0; i < server_addresses_t->NumElements(); ++i) {
       string server_address = server_addresses_t->vec<tstring>()(i);
       auto creds = insecure_creds;
-      resource->builder()->AddListeningPort(server_address, creds);
+      ports.push_back({server_address, creds});
     }
-    resource->builder()->SetMaxReceiveMessageSize(
-        std::numeric_limits<int32>::max());
-    resource->builder()->SetMaxSendMessageSize(
-        std::numeric_limits<int32>::max());
-    resource->builder()->RegisterService(resource->service());
+
+    auto resource = new GrpcServerResource(ports);
 
     OP_REQUIRES_OK(ctx, CreateResource(ctx, HandleFromInput(ctx, 0), resource));
   }
@@ -338,7 +524,65 @@ Status verify_args(const DataTypeVector& expected_arg_types,
   return Status::OK();
 }
 
-class BatchedFn {
+class DirectFn : public FnType {
+ public:
+  DirectFn(FunctionLibraryRuntime* lib, FunctionLibraryRuntime::Handle f_handle,
+           DataTypeVector&& input_types,
+           std::vector<TensorShape>&& input_shapes,
+           std::vector<Tensor>&& captures, GrpcServerResource* resource)
+      : lib_(lib),
+        f_handle_(f_handle),
+        input_types_(std::move(input_types)),
+        input_shapes_(std::move(input_shapes)),
+        captures_(std::move(captures)),
+        resource_(resource) {}
+
+  void operator()(
+      ServerContext* server_ctx, gtl::ArraySlice<Tensor> args,
+      std::function<void(Status, std::vector<Tensor>)> callback) override {
+    Status status = verify_args(input_types_, input_shapes_, args);
+    if (!status.ok()) {
+      callback(status, {});
+      return;
+    }
+    FunctionLibraryRuntime::Options f_opts;
+    f_opts.create_rendezvous = true;
+    std::shared_ptr<CancellationManager> c_mgr;
+    std::shared_ptr<std::function<void()>> deregister_fn;
+
+    status =
+        resource_->create_child_cancellation_manager(&c_mgr, &deregister_fn);
+
+    if (!status.ok()) {
+      callback(status, {});
+      return;
+    }
+
+    f_opts.cancellation_manager = c_mgr.get();
+
+    std::vector<Tensor> full_args(args.begin(), args.end());
+    for (auto& capture : captures_) {
+      full_args.push_back(capture);
+    }
+    std::shared_ptr<std::vector<Tensor>> rets(new std::vector<Tensor>());
+    lib_->Run(f_opts, f_handle_, full_args, rets.get(),
+              [callback, rets, c_mgr](Status f_status) {
+                callback(f_status, *rets);
+              });
+  }
+
+  void Shutdown() override {}
+
+ private:
+  FunctionLibraryRuntime* lib_;
+  FunctionLibraryRuntime::Handle f_handle_;
+  const DataTypeVector input_types_;
+  const std::vector<TensorShape> input_shapes_;
+  const std::vector<Tensor> captures_;
+  GrpcServerResource* resource_;
+};
+
+class BatchedFn : public FnType {
  public:
   BatchedFn(FunctionLibraryRuntime* lib,
             FunctionLibraryRuntime::Handle f_handle,
@@ -352,6 +596,8 @@ class BatchedFn {
         captures_(std::move(captures)),
         resource_(resource),
         batch_size_(input_shapes_[0].dim_size(0)),
+        tp_(new thread::ThreadPool(tensorflow::Env::Default(), "batched_fn",
+                                   input_shapes_[0].dim_size(0))),
         mu_(new mutex()) {
     for (auto shape : input_shapes_) {
       shape.RemoveDim(0);
@@ -359,9 +605,14 @@ class BatchedFn {
     }
   }
 
-  Status operator()(ServerContext* server_ctx, gtl::ArraySlice<Tensor> args,
-                    std::vector<Tensor>* rets) {
-    TF_RETURN_IF_ERROR(verify_args(input_types_, arg_shapes_, args));
+  void operator()(
+      ServerContext* server_ctx, gtl::ArraySlice<Tensor> args,
+      std::function<void(Status, std::vector<Tensor>)> callback) override {
+    Status status = verify_args(input_types_, arg_shapes_, args);
+    if (!status.ok()) {
+      callback(status, {});
+      return;
+    }
 
     int64 index;
     std::shared_ptr<Computation> computation;
@@ -379,6 +630,7 @@ class BatchedFn {
         for (const Tensor& t : captures_) {
           current_computation_->request.push_back(t);
         }
+        current_computation_->callbacks.resize(batch_size_);
       }
 
       computation = current_computation_;
@@ -395,71 +647,72 @@ class BatchedFn {
           args[i], &computation->request[i], index));
     }
 
+    computation->callbacks[index] = callback;
+
     int num_ready = ++computation->num_ready;
     if (num_ready == batch_size_) {
       // A full batch have been filled up, so the function should be executed.
       FunctionLibraryRuntime::Options f_opts;
       f_opts.create_rendezvous = true;
-      CancellationManager c_mgr;
-      std::function<void()> deregister_fn;
+      std::shared_ptr<CancellationManager> c_mgr = nullptr;
+      std::shared_ptr<std::function<void()>> deregister_fn = nullptr;
       auto status =
           resource_->create_child_cancellation_manager(&c_mgr, &deregister_fn);
-      f_opts.cancellation_manager = &c_mgr;
-      auto done_callback = [computation](Status f_status) {
-        computation->f_status.Update(f_status);
-        computation->f_done.Notify();
+      CHECK(status.ok());
+      f_opts.cancellation_manager = c_mgr.get();
+      auto f_callback = [this, deregister_fn, computation,
+                         c_mgr](Status f_status) {
+        (*deregister_fn)();
+        if (f_status.ok()) {
+          for (unsigned int i = 0; i < computation->outputs.size(); ++i) {
+            const auto& shape = computation->outputs[i].shape();
+            if (shape.dims() <= 0) {
+              f_status = errors::InvalidArgument(
+                  "Output must be at least rank 1 when batched=True");
+              break;
+            }
+
+            if (input_shapes_[0].dim_size(0) != shape.dim_size(0)) {
+              f_status = errors::InvalidArgument(
+                  "All outputs must have the same batch size "
+                  "as the inputs when batched=True, expected: ",
+                  input_shapes_[0].dim_size(0), " was: ", shape.dim_size(0));
+              break;
+            }
+          }
+        }
+
+        // Parallel call all callbacks with their slice of outputs in.
+        for (int j = 0; j < batch_size_; ++j) {
+
+          tp_->Schedule([j, computation, f_status]() {
+            std::vector<Tensor> rets;
+            if (f_status.ok()) {
+              rets.reserve(computation->outputs.size());
+              // Pass the slice of the batched outputs to the return vector.
+              for (unsigned int i = 0; i < computation->outputs.size(); ++i) {
+                rets.push_back(computation->outputs[i].SubSlice(j));
+              }
+            }
+            computation->callbacks[j](f_status, rets);
+          });
+        }
       };
-      if (status.ok()) {
-        lib_->Run(f_opts, f_handle_, computation->request,
-                  &computation->outputs, done_callback);
-        computation->f_done.WaitForNotification();
-        deregister_fn();
-      } else {
-        done_callback(status);
-      }
+      lib_->Run(f_opts, f_handle_, computation->request, &computation->outputs,
+                f_callback);
     }
+  }
 
-    // Wait for the function to run/finish.
-    while (!WaitForNotificationWithTimeout(&computation->f_done,
-                                           50000 /* 50 ms */)) {
-      if (server_ctx->IsCancelled()) {
-        break;
-      }
-    }
-
-    // Save status because it's going to be freed before return.
-    Status status;
-    if (server_ctx->IsCancelled()) {
-      // Exit if the server was cancelled.
-      status = errors::Cancelled("Call was cancelled.");
-    } else {
-      status = computation->f_status;
-    }
-
-    if (status.ok()) {
-      // Pass the slice of the batched outputs to the return vector.
-      rets->resize(computation->outputs.size());
-      for (unsigned int i = 0; i < computation->outputs.size(); ++i) {
-        const auto& shape = computation->outputs[i].shape();
-        if (shape.dims() <= 0) {
-          status = errors::InvalidArgument(
-              "Output must be at least rank 1 when batched=True");
-          break;
+  void Shutdown() override {
+    mutex_lock lock(*mu_);
+    if (current_computation_) {
+      std::vector<Tensor> result;
+      for (auto& c : current_computation_->callbacks) {
+        if (c) {
+          c(errors::Cancelled("Server shutdown."), result);
         }
-
-        if (input_shapes_[0].dim_size(0) != shape.dim_size(0)) {
-          status = errors::InvalidArgument(
-              "All outputs must have the same batch size "
-              "as the inputs when batched=True, expected: ",
-              input_shapes_[0].dim_size(0), " was: ", shape.dim_size(0));
-          break;
-        }
-
-        (*rets)[i] = computation->outputs[i].SubSlice(index);
       }
     }
-
-    return status;
   }
 
  private:
@@ -467,8 +720,7 @@ class BatchedFn {
   struct Computation {
     std::vector<Tensor> request;
     std::vector<Tensor> outputs;
-    Notification f_done;
-    Status f_status;
+    std::vector<std::function<void(Status, std::vector<Tensor>)>> callbacks;
     std::atomic_int num_ready{0};
   };
 
@@ -483,6 +735,7 @@ class BatchedFn {
   const int32 batch_size_;
 
   // HACK: A shared_ptr to make type copyable for std::function.
+  std::shared_ptr<thread::ThreadPool> tp_;
   std::shared_ptr<mutex> mu_;
   int64 next_index_ GUARDED_BY(mu_) = 0;
   std::shared_ptr<Computation> current_computation_ GUARDED_BY(mu_);
@@ -598,52 +851,19 @@ class GrpcServerBindOp : public OpKernel {
     for (auto& output_arg : fdef->signature().output_arg()) {
       output_types.push_back(output_arg.type());
     }
+    std::unique_ptr<FnType> func;
     if (batched_) {
-      BatchedFn batched_f(lib, f_handle, std::move(input_types),
-                          std::move(input_shapes_), std::move(captures),
-                          resource);
-      OP_REQUIRES_OK(
-          ctx, resource->service()->Bind(fn_name_, output_specs_, batched_f,
-                                         first_bind_));
+      func.reset(static_cast<FnType*>(new BatchedFn(
+          lib, f_handle, std::move(input_types), std::move(input_shapes_),
+          std::move(captures), resource)));
     } else {
       auto input_shapes = std::move(input_shapes_);
-      auto fn = [resource, captures, lib, f_handle, input_types, input_shapes,
-                 output_types](ServerContext* server_ctx,
-                               gtl::ArraySlice<Tensor> args,
-                               std::vector<Tensor>* rets) {
-        TF_RETURN_IF_ERROR(verify_args(input_types, input_shapes, args));
-        FunctionLibraryRuntime::Options f_opts;
-        f_opts.create_rendezvous = true;
-
-        CancellationManager c_mgr;
-        std::function<void()> deregister_fn;
-
-        auto status =
-            resource->create_child_cancellation_manager(&c_mgr, &deregister_fn);
-
-        f_opts.cancellation_manager = &c_mgr;
-
-        if (status.ok()) {
-          std::vector<Tensor> full_args(args.begin(), args.end());
-          for (auto& capture : captures) {
-            full_args.push_back(capture);
-          }
-          Notification f_done;
-          lib->Run(f_opts, f_handle, full_args, rets,
-                   [&f_done, &status](Status f_status) {
-                     status.Update(f_status);
-                     f_done.Notify();
-                   });
-          f_done.WaitForNotification();
-          deregister_fn();
-        }
-
-        return status;
-      };
-      OP_REQUIRES_OK(ctx,
-                     resource->service()->Bind(fn_name_, output_specs_, fn,
-                                               first_bind_));
+      func.reset(static_cast<FnType*>(new DirectFn(
+          lib, f_handle, std::move(input_types), std::move(input_shapes),
+          std::move(captures), resource)));
     }
+    OP_REQUIRES_OK(ctx, resource->tensor_handler()->Bind(
+        fn_name_, output_specs_, std::move(func), first_bind_));
   }
 
  private:

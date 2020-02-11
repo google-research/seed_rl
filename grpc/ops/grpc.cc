@@ -42,7 +42,6 @@
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/lib/core/threadpool.h"
 #include "tensorflow/core/lib/gtl/array_slice.h"
-#include "tensorflow/core/platform/errors.h"
 #include "tensorflow/core/platform/protobuf.h"
 #include "tensorflow/core/protobuf/struct.pb.h"
 #include "tensorflow/core/util/batch_util.h"
@@ -441,7 +440,6 @@ class GrpcServerResource : public ResourceBase {
     initialized_server_->Join();
     initialized_server_->c_mgr.StartCancel();
     while (initialized_server_.use_count() > 1) {
-      LOG(INFO) << "Waiting for all pending ops to terminate.";
       usleep(10000);
     }
     initialized_server_.reset();

@@ -436,10 +436,10 @@ class GrpcServerResource : public ResourceBase {
   }
 
   void ShutdownServer() {
-    initialized_server_->c_mgr.StartCancel();
     initialized_server_->server->Shutdown(std::chrono::system_clock::now());
     initialized_server_->Shutdown();
     initialized_server_->Join();
+    initialized_server_->c_mgr.StartCancel();
     while (initialized_server_.use_count() > 1) {
       LOG(INFO) << "Waiting for all pending ops to terminate.";
       usleep(10000);

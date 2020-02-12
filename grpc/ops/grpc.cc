@@ -232,13 +232,17 @@ class TensorHandler final {
 struct ProcessorContext {
   std::thread polling_thread;
   std::unique_ptr<grpc::ServerCompletionQueue> cq;
-  mutex mu_;
-  bool is_shutdown_ GUARDED_BY(mu_) = false;
-  // Make sure there is only a single mutex per CPU cache line.
-  char allign_to_64[32];
 };
 
-struct InitializedServer {
+class Tag {
+ public:
+  virtual void Proceed() = 0;
+  virtual string name() const = 0;
+  virtual ~Tag() {}
+};
+
+class InitializedServer {
+ public:
   InitializedServer(TensorHandler* handler, int size)
       : handler(handler), size(size) {
     states = new ProcessorContext[size];
@@ -248,8 +252,21 @@ struct InitializedServer {
 
   void Shutdown() {
     for (int x = 0; x < size; x++) {
-      mutex_lock lock(states[x].mu_);
-      states[x].is_shutdown_ = true;
+      void* untyped_tag;
+      bool ok;
+      while (true) {
+        auto res = states[x].cq->AsyncNext(&untyped_tag, &ok,
+                                           gpr_now(GPR_CLOCK_MONOTONIC));
+        if (res == grpc::CompletionQueue::TIMEOUT) {
+          break;
+        } else {
+          CHECK(res == grpc::CompletionQueue::GOT_EVENT);
+          Tag* tag = static_cast<Tag*>(untyped_tag);
+          delete tag;
+        }
+      }
+    }
+    for (int x = 0; x < size; x++) {
       states[x].cq->Shutdown();
     }
     handler->Shutdown();
@@ -260,7 +277,6 @@ struct InitializedServer {
       states[x].polling_thread.join();
     }
   }
-
   TensorHandler* handler;
   ProcessorContext* states;
   std::unique_ptr<Server> server;
@@ -268,13 +284,7 @@ struct InitializedServer {
   seed_rl::TensorService::AsyncService service;
   CancellationManager c_mgr;
   int size;
-};
-
-class Tag {
- public:
-  virtual void Proceed() = 0;
-  virtual string name() const = 0;
-  virtual ~Tag() {}
+  std::atomic<bool> is_shutdown{false};
 };
 
 class InitData : Tag {
@@ -322,25 +332,20 @@ class CallData : Tag {
 
   void Proceed() override {
     if (status_ == PROCESS) {
-      mutex_lock lock(server_->states[cq_id_].mu_);
       new CallData(server_, cq_id_);
       status_ = READ;
       responder_.Read(&request_, this);
     } else if (status_ == READ) {
       response_.Clear();
       server_->handler->Call(&ctx_, &request_, &response_, [this]() {
-        {
-          mutex_lock lock(server_->states[cq_id_].mu_);
-          if (!server_->states[cq_id_].is_shutdown_) {
-            status_ = WRITE;
-            responder_.Write(response_, this);
-            return;
-          }
+        if (!server_->is_shutdown) {
+          status_ = WRITE;
+          responder_.Write(response_, this);
+          return;
         }
         delete this;
       });
     } else /** if (status_ == WRITE) **/ {
-      mutex_lock lock(server_->states[cq_id_].mu_);
       status_ = READ;
       responder_.Read(&request_, this);
     }
@@ -442,6 +447,7 @@ class GrpcServerResource : public ResourceBase {
   }
 
   void ShutdownServer() {
+    initialized_server_->is_shutdown = true;
     initialized_server_->server->Shutdown(std::chrono::system_clock::now());
     initialized_server_->Shutdown();
     initialized_server_->Join();

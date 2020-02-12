@@ -230,7 +230,6 @@ class TensorHandler final {
 };
 
 struct ProcessorContext {
-  std::thread polling_thread;
   std::unique_ptr<grpc::ServerCompletionQueue> cq;
 };
 
@@ -272,17 +271,13 @@ class InitializedServer {
     handler->Shutdown();
   }
 
-  void Join() {
-    for (int x = 0; x < size; x++) {
-      states[x].polling_thread.join();
-    }
-  }
   TensorHandler* handler;
   ProcessorContext* states;
   std::unique_ptr<Server> server;
   ServerBuilder builder;
   seed_rl::TensorService::AsyncService service;
   CancellationManager c_mgr;
+  std::unique_ptr<thread::ThreadPool> tp;
   int size;
   std::atomic<bool> is_shutdown{false};
 };
@@ -424,9 +419,11 @@ class GrpcServerResource : public ResourceBase {
     initialized_server_->builder.RegisterService(&initialized_server_->service);
 
     initialized_server_->server = initialized_server_->builder.BuildAndStart();
+    initialized_server_->tp.reset(new thread::ThreadPool(
+        tensorflow::Env::Default(), "cq_processor", num_polling_threads_));
 
     for (int i = 0; i < num_polling_threads_; ++i) {
-      auto polling_fn = [this, i]() {
+      initialized_server_->tp->Schedule([this, i]() {
         auto& cq = initialized_server_->states[i].cq;
         new CallData(initialized_server_, i);
         new InitData(initialized_server_, i);
@@ -440,8 +437,7 @@ class GrpcServerResource : public ResourceBase {
             delete tag;
           }
         }
-      };
-      initialized_server_->states[i].polling_thread = std::thread(polling_fn);
+      });
     }
     return Status::OK();
   }
@@ -450,7 +446,7 @@ class GrpcServerResource : public ResourceBase {
     initialized_server_->is_shutdown = true;
     initialized_server_->server->Shutdown(std::chrono::system_clock::now());
     initialized_server_->Shutdown();
-    initialized_server_->Join();
+    initialized_server_->tp.reset();
     initialized_server_->c_mgr.StartCancel();
     while (initialized_server_.use_count() > 1) {
       usleep(10000);

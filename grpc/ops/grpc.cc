@@ -615,6 +615,12 @@ class BatchedFn : public FnType {
       shape.RemoveDim(0);
       arg_shapes_.push_back(shape);
     }
+    current_computation_ = BuildEmptyComputation();
+  }
+
+  ~BatchedFn() {
+    Shutdown();
+    delete current_computation_;
   }
 
   bool operator()(
@@ -627,29 +633,21 @@ class BatchedFn : public FnType {
     }
 
     int64 index;
-    std::shared_ptr<Computation> computation;
+    Computation* computation = nullptr;
     {
       mutex_lock lock(*mu_);
+      CHECK(current_computation_);
       index = next_index_++;
-
-      if (index == 0) {
-        CHECK(current_computation_ == nullptr);
-        current_computation_ = std::make_shared<Computation>();
-        for (unsigned int i = 0; i < input_types_.size(); ++i) {
-          current_computation_->request.emplace_back(input_types_[i],
-                                                     input_shapes_[i]);
-        }
-        for (const Tensor& t : captures_) {
-          current_computation_->request.push_back(t);
-        }
-        current_computation_->callbacks.resize(batch_size_);
-      }
-
       computation = current_computation_;
 
       if (index == batch_size_ - 1) {
         next_index_ = 0;
-        current_computation_.reset();
+        if (!empty_computations_.empty()) {
+          current_computation_ = empty_computations_.back();
+          empty_computations_.pop_back();
+        } else {
+          current_computation_ = BuildEmptyComputation();
+        }
       }
     }
 
@@ -695,23 +693,33 @@ class BatchedFn : public FnType {
         }
 
         // Parallel call all callbacks with their slice of outputs in.
-        for (int j = 0; j < batch_size_; ++j) {
+        // Make sure computation is freed once callbacks are done.
+        std::shared_ptr<Computation> done_computation;
+        done_computation.reset(computation);
 
-          tp_->Schedule([j, computation, f_status]() {
+        for (int j = 0; j < batch_size_; ++j) {
+          tp_->Schedule([j, done_computation, f_status]() {
             std::vector<Tensor> rets;
             if (f_status.ok()) {
-              rets.reserve(computation->outputs.size());
+              rets.reserve(done_computation->outputs.size());
               // Pass the slice of the batched outputs to the return vector.
-              for (unsigned int i = 0; i < computation->outputs.size(); ++i) {
-                rets.push_back(computation->outputs[i].SubSlice(j));
+              for (unsigned int i = 0; i < done_computation->outputs.size();
+                   ++i) {
+                rets.push_back(done_computation->outputs[i].SubSlice(j));
               }
             }
-            computation->callbacks[j](f_status, rets);
+            done_computation->callbacks[j](f_status, rets);
           });
         }
       };
       lib_->Run(f_opts, f_handle_, computation->request, &computation->outputs,
                 f_callback);
+      // Refill empty_computations_.
+      Computation* refill_comp = BuildEmptyComputation();
+      {
+        mutex_lock lock(*mu_);
+        empty_computations_.push_back(refill_comp);
+      }
       return true;
     }
     return false;
@@ -719,14 +727,18 @@ class BatchedFn : public FnType {
 
   void Shutdown() override {
     mutex_lock lock(*mu_);
-    if (current_computation_) {
-      std::vector<Tensor> result;
-      for (auto& c : current_computation_->callbacks) {
-        if (c) {
-          c(errors::Cancelled("Server shutdown."), result);
-        }
+    std::vector<Tensor> result;
+    for (auto& c : current_computation_->callbacks) {
+      if (c) {
+        c(errors::Cancelled("Server shutdown."), result);
       }
     }
+    delete current_computation_;
+    current_computation_ = BuildEmptyComputation();
+    for (auto c : empty_computations_) {
+      delete c;
+    }
+    empty_computations_.clear();
   }
 
  private:
@@ -737,6 +749,18 @@ class BatchedFn : public FnType {
     std::vector<std::function<void(Status, std::vector<Tensor>)>> callbacks;
     std::atomic_int num_ready{0};
   };
+
+  Computation* BuildEmptyComputation() {
+    Computation* c = new Computation();
+    for (unsigned int i = 0; i < input_types_.size(); ++i) {
+      c->request.emplace_back(input_types_[i], input_shapes_[i]);
+    }
+    for (const Tensor& t : captures_) {
+      c->request.push_back(t);
+    }
+    c->callbacks.resize(batch_size_);
+    return c;
+  }
 
   FunctionLibraryRuntime* lib_;
   FunctionLibraryRuntime::Handle f_handle_;
@@ -752,7 +776,8 @@ class BatchedFn : public FnType {
   std::shared_ptr<thread::ThreadPool> tp_;
   std::shared_ptr<mutex> mu_;
   int64 next_index_ GUARDED_BY(mu_) = 0;
-  std::shared_ptr<Computation> current_computation_ GUARDED_BY(mu_);
+  std::vector<Computation*> empty_computations_ GUARDED_BY(mu_);
+  Computation* current_computation_ GUARDED_BY(mu_) = nullptr;
 };
 
 class GrpcServerBindOp : public OpKernel {

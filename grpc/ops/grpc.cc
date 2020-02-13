@@ -58,6 +58,8 @@ using grpc::ServerReaderWriter;
 
 REGISTER_RESOURCE_HANDLE_OP(GrpcServerResource);
 
+constexpr int workers_thread_pools = 26;
+
 REGISTER_OP("CreateGrpcServer")
     .Input("handle: resource")
     .Input("server_addresses: string")
@@ -365,8 +367,11 @@ class GrpcServerResource : public ResourceBase {
   GrpcServerResource(
       std::vector<std::pair<string, std::shared_ptr<grpc::ServerCredentials>>>
           ports)
-
-      : ResourceBase(), ports_(ports), num_polling_threads_(26) {}
+      : ResourceBase(),
+        ports_(ports),
+        num_polling_threads_(workers_thread_pools),
+        func_tp(new thread::ThreadPool(tensorflow::Env::Default(), "batched_fn",
+                                       workers_thread_pools)) {}
 
   string DebugString() const override { return "gRPC Server"; }
 
@@ -465,6 +470,7 @@ class GrpcServerResource : public ResourceBase {
   const int num_polling_threads_;
   std::shared_ptr<InitializedServer> initialized_server_;
   TensorHandler handler_;
+  std::unique_ptr<thread::ThreadPool> func_tp;
 };
 
 REGISTER_RESOURCE_HANDLE_KERNEL(GrpcServerResource);
@@ -596,7 +602,8 @@ class BatchedFn : public FnType {
             FunctionLibraryRuntime::Handle f_handle,
             DataTypeVector&& input_types,
             std::vector<TensorShape>&& input_shapes,
-            std::vector<Tensor>&& captures, GrpcServerResource* resource)
+            std::vector<Tensor>&& captures, GrpcServerResource* resource,
+            thread::ThreadPool* tp)
       : lib_(lib),
         f_handle_(f_handle),
         input_types_(std::move(input_types)),
@@ -604,8 +611,7 @@ class BatchedFn : public FnType {
         captures_(std::move(captures)),
         resource_(resource),
         batch_size_(input_shapes_[0].dim_size(0)),
-        tp_(new thread::ThreadPool(tensorflow::Env::Default(), "batched_fn",
-                                   input_shapes_[0].dim_size(0))),
+        tp_(tp),
         mu_(new mutex()) {
     for (auto shape : input_shapes_) {
       shape.RemoveDim(0);
@@ -692,19 +698,23 @@ class BatchedFn : public FnType {
         // Make sure computation is freed once callbacks are done.
         std::shared_ptr<Computation> done_computation;
         done_computation.reset(computation);
-
-        for (int j = 0; j < batch_size_; ++j) {
-          tp_->Schedule([j, done_computation, f_status]() {
-            std::vector<Tensor> rets;
-            if (f_status.ok()) {
-              rets.reserve(done_computation->outputs.size());
-              // Pass the slice of the batched outputs to the return vector.
-              for (unsigned int i = 0; i < done_computation->outputs.size();
-                   ++i) {
-                rets.push_back(done_computation->outputs[i].SubSlice(j));
+        const int work_unit_size =
+            (batch_size_ + workers_thread_pools - 1) / workers_thread_pools;
+        for (int j = 0; j < batch_size_; j += work_unit_size) {
+          const int limit = std::min(j + work_unit_size, batch_size_);
+          tp_->Schedule([j, done_computation, f_status, limit]() {
+            for (int x = j; x < limit; x++) {
+              std::vector<Tensor> rets;
+              if (f_status.ok()) {
+                rets.reserve(done_computation->outputs.size());
+                // Pass the slice of the batched outputs to the return vector.
+                for (unsigned int i = 0; i < done_computation->outputs.size();
+                     ++i) {
+                  rets.push_back(done_computation->outputs[i].SubSlice(x));
+                }
               }
+              done_computation->callbacks[x](f_status, rets);
             }
-            done_computation->callbacks[j](f_status, rets);
           });
         }
       };
@@ -769,7 +779,7 @@ class BatchedFn : public FnType {
   const int32 batch_size_;
 
   // HACK: A shared_ptr to make type copyable for std::function.
-  std::shared_ptr<thread::ThreadPool> tp_;
+  thread::ThreadPool* tp_;
   std::shared_ptr<mutex> mu_;
   int64 next_index_ GUARDED_BY(mu_) = 0;
   std::vector<Computation*> empty_computations_ GUARDED_BY(mu_);
@@ -890,7 +900,7 @@ class GrpcServerBindOp : public OpKernel {
     if (batched_) {
       func.reset(static_cast<FnType*>(new BatchedFn(
           lib, f_handle, std::move(input_types), std::move(input_shapes_),
-          std::move(captures), resource)));
+          std::move(captures), resource, resource->func_tp.get())));
     } else {
       func.reset(static_cast<FnType*>(new DirectFn(
           lib, f_handle, std::move(input_types), std::move(input_shapes_),

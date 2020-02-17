@@ -27,6 +27,7 @@ from seed_rl.football import networks
 import tensorflow as tf
 
 
+
 FLAGS = flags.FLAGS
 
 # Optimizer settings.

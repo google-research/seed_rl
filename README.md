@@ -66,9 +66,10 @@ To easily start with SEED we provide a way of running it on a local
 machine. You just need to run one of the following commands:
 
 ```shell
-./run_local.sh atari r2d2
-./run_local.sh football vtrace
-./run_local.sh dmlab vtrace
+./run_local.sh [Game] [Agent] [Num. actors]
+./run_local.sh atari r2d2 4
+./run_local.sh football vtrace 4
+./run_local.sh dmlab vtrace 4
 ```
 
 It will build a Docker image using SEED source code and start the training

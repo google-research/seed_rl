@@ -496,7 +496,7 @@ class TPUEncodedUInt8Spec(tf.TypeSpec):
 
   @property
   def value_type(self):
-    assert False
+    return TPUEncodedUInt8
 
 
 class TPUEncodedUInt8(composite_tensor.CompositeTensor):
@@ -543,7 +543,7 @@ class TPUEncodedF32Spec(tf.TypeSpec):
 
   @property
   def value_type(self):
-    assert False
+    return TPUEncodedF32
 
 
 class TPUEncodedF32(composite_tensor.CompositeTensor):
@@ -627,7 +627,7 @@ def tpu_decode(ts, structure=None):
     packed as `ts`.
   """
   def visit(t, s):  
-    s = s.primary if isinstance(s, values_lib.PerReplica) else s
+    s = s.values[0] if isinstance(s, values_lib.PerReplica) else s
     if isinstance(s, TPUEncodedUInt8):
       x = t.encoded if isinstance(t, TPUEncodedUInt8) else t
       x = tf.reshape(x, [-1, 32, 1])

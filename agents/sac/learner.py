@@ -364,7 +364,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
           'Mismatch in number of net tensors: {} != {}'.format(
               len(target_variables), len(variables)))
       for target_var, source_var in zip(target_variables, variables):
-        target_var.assign(FLAGS.polyak * target_var +
+        target_var.assign(polyak * target_var +
                           (1. - polyak) * source_var)
 
     update_target_agent(polyak=0.)  # copy weights

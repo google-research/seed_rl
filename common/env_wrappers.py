@@ -57,17 +57,16 @@ class UniformBoundActionSpaceWrapper(gym.Env):
 
     Args:
       env: Environment to be wrapped. It must have an action space of type
-        gym.spaces.Box and the action bounds have to be symmetric w.r.t. 0, i.e.
-        (env.action_space.low == -env.action_space.high).all().
+        gym.spaces.Box.
     """
     self.env = env
     self.observation_space = env.observation_space
     assert isinstance(env.action_space, gym.spaces.Box)
+    assert env.action_space.dtype == np.float32
     n_action_dim = env.action_space.shape[0]
+    self.low = env.action_space.low
     self.high = env.action_space.high
-    assert (env.action_space.low == -self.high).all(), (
-        'UniformBoundActionSpaceWrapper only supports action spaces with '
-        'symmetric bounds.')
+    self.center = (self.low + self.high) / 2.
     self.action_space = gym.spaces.Box(low=-np.ones(n_action_dim),
                                        high=np.ones(n_action_dim),
                                        dtype=np.float32)
@@ -76,7 +75,7 @@ class UniformBoundActionSpaceWrapper(gym.Env):
     assert np.abs(action).max() < 1.00001
     action = np.clip(action, -1, 1)
     assert self.action_space.contains(action)
-    action *= self.high
+    action = self.center + action * (self.high - self.center)
     assert self.env.action_space.contains(action)
     obs, rew, done, info = self.env.step(action)
     return obs, rew, done, info

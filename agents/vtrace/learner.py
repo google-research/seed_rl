@@ -58,9 +58,6 @@ flags.DEFINE_float('max_abs_reward', 0.,
                    'Maximum absolute reward when calculating loss.'
                    'Use 0. to disable clipping.')
 
-# Actors
-flags.DEFINE_integer('num_actors', 4, 'Number of actors.')
-
 # Logging
 flags.DEFINE_integer('log_batch_frequency', 100, 'We average that many batches '
                      'before logging batch statistics like entropy.')

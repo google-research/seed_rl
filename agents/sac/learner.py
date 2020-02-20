@@ -85,9 +85,6 @@ flags.DEFINE_float(
     'Coefficient for soft target network update. Set to 1 for hard update.'
 )
 
-# Actors
-flags.DEFINE_integer('num_actors', 4, 'Number of actors.')
-
 # Logging
 flags.DEFINE_integer('log_batch_frequency', 100, 'We average that many batches '
                      'before logging batch statistics like entropy.')

@@ -88,13 +88,6 @@ flags.DEFINE_float('discounting', .997, 'Discounting factor.')
 # Eval settings
 flags.DEFINE_float('eval_epsilon', 1e-3,
                    'Epsilon (as in epsilon-greedy) used for evaluation.')
-flags.DEFINE_integer('num_eval_actors', 2,
-                     'Number of actors whose transitions will be used for '
-                     'eval.')
-
-flags.DEFINE_integer('num_actors', 4,
-                     'Total number of actors. The last --num_eval_actors will '
-                     'be reserved for evaluation and not used for training.')
 
 FLAGS = flags.FLAGS
 

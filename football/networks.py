@@ -132,6 +132,11 @@ class GFootball(tf.Module):
       # Remove time dimension.
       outputs = tf.nest.map_structure(lambda t: tf.squeeze(t, 0), outputs)
 
+    if not is_training:
+      outputs = AgentOutput(
+          self._parametric_action_distribution.postprocess(outputs.action),
+          outputs.policy_logits, outputs.baseline)
+
     return outputs, core_state
 
   def _unroll(self, prev_actions, env_outputs, core_state):

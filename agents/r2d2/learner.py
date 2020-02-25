@@ -508,12 +508,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   settings = utils.init_learner(FLAGS.num_training_tpus)
   strategy, inference_devices, training_strategy, encode, decode = settings
   env = create_env_fn(0)
-  env_output_specs = utils.EnvOutput(
-      tf.TensorSpec([], tf.float32, 'reward'),
-      tf.TensorSpec([], tf.bool, 'done'),
-      tf.TensorSpec(env.observation_space.shape, env.observation_space.dtype,
-                    'observation'),
-  )
+  env_output_specs = utils.get_env_output_specs(env)
   action_specs = tf.TensorSpec([], tf.int32, 'action')
   num_actions = env.action_space.n
   agent_input_specs = (action_specs, env_output_specs)

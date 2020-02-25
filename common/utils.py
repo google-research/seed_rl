@@ -60,6 +60,15 @@ def init_learner(num_training_tpus):
     return Settings(strategy, [device_name], strategy, enc, dec)
 
 
+def get_env_output_specs(env):
+  return EnvOutput(
+      tf.TensorSpec([], tf.float32, 'reward'),
+      tf.TensorSpec([], tf.bool, 'done'),
+      tf.TensorSpec(env.observation_space.shape, env.observation_space.dtype,
+                    'observation'),
+  )
+
+
 class UnrollStore(tf.Module):
   """Utility module for combining individual actor steps into unrolls."""
 

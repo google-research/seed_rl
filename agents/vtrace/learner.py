@@ -308,18 +308,9 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   unroll_queue = utils.StructuredFIFOQueue(1, unroll_specs)
   info_queue = utils.StructuredFIFOQueue(-1, info_specs)
 
-  def add_batch_size(ts):
-    return tf.TensorSpec([FLAGS.inference_batch_size] + list(ts.shape),
-                         ts.dtype, ts.name)
-
   inference_iteration = tf.Variable(-1)
-  inference_specs = (
-      tf.TensorSpec([], tf.int32, 'actor_id'),
-      tf.TensorSpec([], tf.int64, 'run_id'),
-      env_output_specs,
-      tf.TensorSpec([], tf.float32, 'raw_reward'),
-  )
-  inference_specs = tf.nest.map_structure(add_batch_size, inference_specs)
+  inference_specs = utils.get_inference_specs(env_output_specs,
+                                              FLAGS.inference_batch_size)
   @tf.function(input_signature=inference_specs)
   def inference(actor_ids, run_ids, env_outputs, raw_rewards):
     # Reset the actors that had their first run or crashed.

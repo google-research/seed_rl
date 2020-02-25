@@ -69,6 +69,25 @@ def get_env_output_specs(env):
   )
 
 
+def get_basic_inference_specs(env_output_specs):
+  return (
+      tf.TensorSpec([], tf.int32, 'actor_id'),
+      tf.TensorSpec([], tf.int64, 'run_id'),
+      env_output_specs,
+      tf.TensorSpec([], tf.float32, 'raw_reward'),
+  )
+
+
+def get_inference_specs(env_output_specs, inference_batch_size):
+  def add_batch_size(ts):
+    return tf.TensorSpec([inference_batch_size] + list(ts.shape),
+                         ts.dtype, ts.name)
+
+  inference_specs = get_basic_inference_specs(env_output_specs)
+  inference_specs = tf.nest.map_structure(add_batch_size, inference_specs)
+  return inference_specs
+
+
 class UnrollStore(tf.Module):
   """Utility module for combining individual actor steps into unrolls."""
 

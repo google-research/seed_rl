@@ -88,6 +88,14 @@ def get_inference_specs(env_output_specs, inference_batch_size):
   return inference_specs
 
 
+def get_basic_info_specs():
+  return (
+      tf.TensorSpec([], tf.int64, 'episode_num_frames'),
+      tf.TensorSpec([], tf.float32, 'episode_returns'),
+      tf.TensorSpec([], tf.float32, 'episode_raw_returns'),
+  )
+
+
 class UnrollStore(tf.Module):
   """Utility module for combining individual actor steps into unrolls."""
 

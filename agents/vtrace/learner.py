@@ -288,11 +288,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
       (action_specs, env_output_specs, agent_output_specs))
   actor_run_ids = utils.Aggregator(FLAGS.num_actors,
                                    tf.TensorSpec([], tf.int64, 'run_ids'))
-  info_specs = (
-      tf.TensorSpec([], tf.int64, 'episode_num_frames'),
-      tf.TensorSpec([], tf.float32, 'episode_returns'),
-      tf.TensorSpec([], tf.float32, 'episode_raw_returns'),
-  )
+  info_specs = utils.get_basic_info_specs()
   actor_infos = utils.Aggregator(FLAGS.num_actors, info_specs, 'actor_infos')
 
   # First agent state in an unroll.

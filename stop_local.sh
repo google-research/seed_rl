@@ -14,6 +14,6 @@
 
 
 
-pgrep -f "seed.*/.*(actor|learner)" | xargs kill -9 2> /dev/null
+pgrep -f "seed.*--run_mode=" | xargs kill -9 2> /dev/null
 tmux kill-session -t seed_rl
-reset
+exit 0

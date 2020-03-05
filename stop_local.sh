@@ -22,7 +22,7 @@ get_descendants ()
   do
     get_descendants "$pid"
   done
-  if [[ $1 != $$ ]]; then
+  if (( $1 != $$ && $1 != $PPID )); then
     echo "$1 "
   fi
 }
@@ -33,5 +33,5 @@ for C in `tmux list-panes -s -F "#{pane_pid} #{pane_current_command}" 2> /dev/nu
 done
 if [[ $processes != '' ]]; then
   kill -9 $processes
-  kill -9 $$
 fi
+tmux kill-session -t seed_rl

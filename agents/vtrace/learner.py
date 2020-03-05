@@ -216,7 +216,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   with strategy.scope():
     @tf.function
     def create_variables(*args):
-      return agent(*decode(args))
+      return agent.get_action(*decode(args))
 
     initial_agent_output, _ = create_variables(input_, initial_agent_state)
     # Create optimizer.

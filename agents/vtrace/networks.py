@@ -48,6 +48,7 @@ class MLPandLSTM(tf.Module):
         parametric_action_distribution.param_size, name='policy_logits')
     self._baseline = tf.keras.layers.Dense(1, name='baseline')
 
+  @tf.function
   def initial_state(self, batch_size):
     return self._core.get_initial_state(batch_size=batch_size, dtype=tf.float32)
 
@@ -59,6 +60,15 @@ class MLPandLSTM(tf.Module):
     action = self._parametric_action_distribution.sample(policy_logits)
 
     return AgentOutput(action, policy_logits, baseline)
+
+  # Not clear why, but if "@tf.function" declarator is placed directly onto
+  # __call__, training fails with "uninitialized variable *baseline".
+  # when running on multiple learning tpu cores.
+
+
+  @tf.function
+  def get_action(self, *args, **kwargs):
+    return self.__call__(*args, **kwargs)
 
   def __call__(self, input_, core_state, unroll=False,
                is_training=False):

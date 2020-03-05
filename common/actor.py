@@ -32,10 +32,16 @@ flags.DEFINE_integer('task', 0, 'Task id.')
 flags.DEFINE_integer('num_actors_with_summaries', 4,
                      'Number of actors that will log debug/profiling TF '
                      'summaries.')
+flags.DEFINE_bool('render', False,
+                  'Whether the first actor should render the environment.')
 
 
 def are_summaries_enabled():
   return FLAGS.task < FLAGS.num_actors_with_summaries
+
+
+def is_rendering_enabled():
+  return FLAGS.render and FLAGS.task == 0
 
 
 def actor_loop(create_env_fn):
@@ -83,6 +89,8 @@ def actor_loop(create_env_fn):
                 FLAGS.task, run_id, env_output, raw_reward)
           with timer_cls('actor/elapsed_env_step_s', 1000):
             observation, reward, done, info = env.step(action.numpy())
+          if is_rendering_enabled():
+            env.render()
           episode_step += 1
           episode_return += reward
           raw_reward = float((info or {}).get('score_reward', reward))
@@ -95,6 +103,8 @@ def actor_loop(create_env_fn):
               episode_step = 0
               episode_return = 0
               episode_raw_return = 0
+            if is_rendering_enabled():
+              env.render()
           actor_step += 1
       except (tf.errors.UnavailableError, tf.errors.CancelledError) as e:
         logging.exception(e)

@@ -14,6 +14,24 @@
 
 
 
-pgrep -f "seed.*--run_mode=" | xargs kill -9 2> /dev/null
-tmux kill-session -t seed_rl
-exit 0
+get_descendants ()
+{
+  local children=$(ps -o pid= --ppid "$1")
+
+  for pid in $children
+  do
+    get_descendants "$pid"
+  done
+  if [[ $1 != $$ ]]; then
+    echo "$1 "
+  fi
+}
+
+processes=''
+for C in `tmux list-panes -s -F "#{pane_pid} #{pane_current_command}" 2> /dev/null | grep -v tmux | awk '{print $1}'`; do
+  processes+=$(get_descendants $C)
+done
+if [[ $processes != '' ]]; then
+  kill -9 $processes
+  kill -9 $$
+fi

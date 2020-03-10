@@ -122,8 +122,17 @@ class GFootball(tf.Module):
 
     return AgentOutput(new_action, policy_logits, baseline)
 
+  # Not clear why, but if "@tf.function" declarator is placed directly onto
+  # __call__, training fails with "uninitialized variable *baseline".
+  # when running on multiple learning tpu cores.
+
+
+  @tf.function
+  def get_action(self, *args, **kwargs):
+    return self.__call__(*args, **kwargs)
+
   def __call__(self, input_, core_state, unroll=False,
-               is_training=False):
+               is_training=False, postprocess_action=True):
     if not unroll:
       # Add time dimension.
       input_ = tf.nest.map_structure(lambda t: tf.expand_dims(t, 0), input_)

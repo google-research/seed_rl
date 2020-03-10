@@ -77,7 +77,8 @@ def compute_loss(parametric_action_distribution, agent, agent_state,
   learner_outputs, _ = agent((prev_actions, env_outputs),
                              agent_state,
                              unroll=True,
-                             is_training=True)
+                             is_training=True,
+                             postprocess_action=False)
 
   # Use last baseline value (from the value function) to bootstrap.
   bootstrap_value = learner_outputs.baseline[-1]
@@ -262,6 +263,11 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
 
     strategy.experimental_run_v2(apply_gradients, (loss,))
 
+    try:
+      agent.end_of_training_step_callback()
+    except AttributeError:
+      logging.info('end_of_episode_callback() not found')
+
     return logs
 
   agent_output_specs = tf.nest.map_structure(
@@ -355,7 +361,8 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
         with tf.device(inference_device):
           @tf.function
           def agent_inference(*args):
-            return agent(*decode(args), is_training=True)
+            return agent(*decode(args), is_training=False,
+                         postprocess_action=False)
 
           return agent_inference(input_, prev_agent_states)
 

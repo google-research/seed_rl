@@ -24,6 +24,7 @@ AGENTS="r2d2|vtrace"
 [ "$#" -ne 0 ] || die "Usage: run_local.sh [$ENVIRONMENTS] [$AGENTS] [Num. actors]"
 echo $1 | grep -E -q $ENVIRONMENTS || die "Supported games: $ENVIRONMENTS"
 echo $2 | grep -E -q $AGENTS || die "Supported agents: $AGENTS"
+echo $3 | grep -E -q "^[0-9]+$" || die "Number of actors should be a non-negative integer"
 export ENVIRONMENT=$1
 export AGENT=$2
 export NUM_ACTORS=$3

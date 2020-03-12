@@ -50,10 +50,11 @@ class ActorCriticMLP(tf.Module):
     self._q_mlp = [create_mlp(mlp_sizes + [1]) for _ in range(n_critics)]
     self._v_mlp = create_mlp(mlp_sizes + [1])
 
+  @tf.function
   def initial_state(self, batch_size):
     return ()
 
-  def get_Q(self, env_output, prev_action, state, action):
+  def get_Q(self, prev_action, env_output, state, action):
     """Computes state-action values.
 
     Args:
@@ -78,7 +79,7 @@ class ActorCriticMLP(tf.Module):
     return tf.concat(values=[critic(input_) for critic in self._q_mlp],
                      axis=-1)
 
-  def get_V(self, env_output, prev_action, state):
+  def get_V(self, prev_action, env_output, state):
     """Returns state values.
 
     Args: See get_Q above.
@@ -86,7 +87,7 @@ class ActorCriticMLP(tf.Module):
     """
     return tf.squeeze(self._v_mlp(env_output.observation), axis=-1)
 
-  def get_action_params(self, env_output, prev_action, state):
+  def get_action_params(self, prev_action, env_output, state):
     """Returns action distribution parameters (i.e. actor network outputs).
 
     Args: See get_Q above.
@@ -94,8 +95,17 @@ class ActorCriticMLP(tf.Module):
     """
     return self._actor_mlp(env_output.observation)
 
-  def __call__(self, env_output, prev_action, state, unroll=False,
-               is_training=False):
+  # Not clear why, but if "@tf.function" declarator is placed directly onto
+  # __call__, training fails with "uninitialized variable *baseline".
+  # when running on multiple learning tpu cores.
+
+
+  @tf.function
+  def get_action(self, *args, **kwargs):
+    return self.__call__(*args, **kwargs)
+
+  def __call__(self, prev_action, env_output, state, unroll=False,
+               is_training=False, postprocess_action=True):
     """Runs the agent.
 
     Args:
@@ -108,9 +118,9 @@ class ActorCriticMLP(tf.Module):
     Returns:
       action taken and new agent state.
     """
-    action_params = self.get_action_params(env_output, prev_action, state)
+    action_params = self.get_action_params(prev_action, env_output, state)
     action = self._action_distribution.sample(action_params)
-    if not is_training:
+    if postprocess_action:
       action = self._action_distribution.postprocess(action)
     return action, ()
 
@@ -217,13 +227,14 @@ class ActorCriticLSTM(tf.Module):
     self._q_nets = [create_net(1) for _ in range(n_critics)]
     self._networks = [self._actor_net, self._v_net] + self._q_nets
 
+  @tf.function
   def initial_state(self, batch_size):
     return [net.initial_state(batch_size) for net in self._networks]
 
   def _prepare_action_input(self, action):
     return tf.cast(self._action_distribution.postprocess(action), tf.float32)
 
-  def _run_net(self, net, env_output, prev_action, state, ff_input,
+  def _run_net(self, net, prev_action, env_output, state, ff_input,
                only_return_new_state=False):
     action_input = self._prepare_action_input(prev_action)
     recurrent_input = tf.concat(values=[env_output.observation, action_input],
@@ -234,7 +245,7 @@ class ActorCriticLSTM(tf.Module):
                done=env_output.done,
                only_return_new_state=only_return_new_state)
 
-  def get_Q(self, env_output, prev_action, state, action):
+  def get_Q(self, prev_action, env_output, state, action):
     """Computes state-action values.
 
     Args:
@@ -251,33 +262,42 @@ class ActorCriticLSTM(tf.Module):
     """
     ff_input = tf.concat(values=[env_output.observation,
                                  self._prepare_action_input(action)], axis=-1)
-    q_values = [self._run_net(net, env_output, prev_action, state=net_state,
+    q_values = [self._run_net(net, prev_action, env_output, state=net_state,
                               ff_input=ff_input)[0]
                 for (net, net_state) in zip(self._q_nets, state[2:])]
     return tf.concat(values=q_values, axis=-1)
 
-  def get_V(self, env_output, prev_action, state):
+  def get_V(self, prev_action, env_output, state):
     """Returns state values.
 
     Args: See get_Q above.
     Returns: [time, batch_size] tensor with state values.
     """
-    v = self._run_net(self._v_net, env_output, prev_action, state=state[1],
+    v = self._run_net(self._v_net, prev_action, env_output, state=state[1],
                       ff_input=env_output.observation)[0]
     return tf.squeeze(v, axis=-1)
 
-  def get_action_params(self, env_output, prev_action, state):
+  def get_action_params(self, prev_action, env_output, state):
     """Returns action distribution parameters (i.e. actor network outputs).
 
     Args: See get_Q above.
     Returns: [time, batch_size, *] tensor with action distribution parameters.
     """
-    return self._run_net(self._actor_net, env_output, prev_action,
+    return self._run_net(self._actor_net, prev_action, env_output,
                          state=state[0],
                          ff_input=env_output.observation)[0]
 
-  def __call__(self, env_output, prev_action, state, unroll=False,
-               is_training=False):
+  # Not clear why, but if "@tf.function" declarator is placed directly onto
+  # __call__, training fails with "uninitialized variable *baseline".
+  # when running on multiple learning tpu cores.
+
+
+  @tf.function
+  def get_action(self, *args, **kwargs):
+    return self.__call__(*args, **kwargs)
+
+  def __call__(self, prev_action, env_output, state, unroll=False,
+               is_training=False, postprocess_action=True):
     """Runs the agent.
 
     Args:
@@ -295,21 +315,21 @@ class ActorCriticLSTM(tf.Module):
       env_output = tf.nest.map_structure(lambda t: tf.expand_dims(t, 0),
                                          env_output)
       prev_action = tf.expand_dims(prev_action, 0)
-    action, state = self._unroll(env_output, prev_action, state)
+    action, state = self._unroll(prev_action, env_output, state)
     if not unroll:
       # Remove time dimension.
       action = tf.nest.map_structure(lambda t: tf.squeeze(t, 0), action)
 
-    if not is_training:
+    if postprocess_action:
       action = self._action_distribution.postprocess(action)
 
     return action, state
 
-  def _unroll(self, env_output, prev_action, state):
-    action_params = self.get_action_params(env_output, prev_action, state)
+  def _unroll(self, prev_action, env_output, state):
+    action_params = self.get_action_params(prev_action, env_output, state)
     action = self._action_distribution.sample(action_params)
 
-    new_states = [self._run_net(net, env_output, prev_action, net_state,
+    new_states = [self._run_net(net, prev_action, env_output, net_state,
                                 ff_input=None, only_return_new_state=True)
                   for (net, net_state) in zip(self._networks, state)]
 

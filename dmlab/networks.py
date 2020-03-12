@@ -132,12 +132,12 @@ class ImpalaDeep(tf.Module):
   def get_action(self, *args, **kwargs):
     return self.__call__(*args, **kwargs)
 
-  def __call__(self, input_, core_state, unroll=False,
+  def __call__(self, prev_actions, env_outputs, core_state, unroll=False,
                is_training=False, postprocess_action=True):
     if not unroll:
       # Add time dimension.
-      input_ = tf.nest.map_structure(lambda t: tf.expand_dims(t, 0), input_)
-    prev_actions, env_outputs = input_
+      prev_actions, env_outputs = tf.nest.map_structure(
+          lambda t: tf.expand_dims(t, 0), (prev_actions, env_outputs))
     outputs, core_state = self._unroll(prev_actions, env_outputs, core_state)
     if not unroll:
       # Remove time dimension.

@@ -54,8 +54,8 @@ def _run_actor(agent):
       dtype=tf.uint8,
   )
   initial_env_output = (tf.constant([2.]), tf.constant([False]), observation)
-  initial_agent_input = (tf.zeros([1], dtype=tf.int32), initial_env_output)
-  return agent(initial_agent_input, initial_agent_state)
+  return agent(tf.zeros([1], dtype=tf.int32), initial_env_output,
+               initial_agent_state)
 
 
 if __name__ == '__main__':

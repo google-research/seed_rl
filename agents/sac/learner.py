@@ -108,9 +108,9 @@ def compute_loss(parametric_action_distribution, agent, target_agent,
     rewards = tf.clip_by_value(rewards, -FLAGS.max_abs_reward,
                                FLAGS.max_abs_reward)
 
-  target_inputs = (env_outputs, prev_actions, agent_state)
-  inputs = (tf.nest.map_structure(lambda t: t[:-1], env_outputs),
-            prev_actions[:-1], agent_state)
+  target_inputs = (prev_actions, env_outputs, agent_state)
+  inputs = (prev_actions[:-1],
+            tf.nest.map_structure(lambda t: t[:-1], env_outputs), agent_state)
 
   # run actor
   action_params = agent.get_action_params(*inputs)
@@ -332,20 +332,23 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   initial_agent_state = agent.initial_state(1)
   agent_state_specs = tf.nest.map_structure(
       lambda t: tf.TensorSpec(t.shape[1:], t.dtype), initial_agent_state)
-  agent_input_specs = (env_output_specs, action_specs)
+  agent_input_specs = (action_specs, env_output_specs)
 
   input_ = tf.nest.map_structure(
       lambda s: tf.zeros([1, 1] + list(s.shape), s.dtype), agent_input_specs)
+  input_no_time = tf.nest.map_structure(lambda t: t[0], input_)
+
   input_ = encode(input_ + (initial_agent_state,))
+  input_no_time = encode(input_no_time + (initial_agent_state,))
 
   with strategy.scope():
     # Initialize variables
     def initialize_agent_variables(agent):
       @tf.function
       def create_variables():
-        return [agent(*decode(input_), unroll=True),
+        return [agent.get_action(*decode(input_no_time)),
                 agent.get_V(*decode(input_)),
-                agent.get_Q(*decode(input_), action=decode(input_[1]))]
+                agent.get_Q(*decode(input_), action=decode(input_[0]))]
       create_variables()
 
     initialize_agent_variables(agent)
@@ -500,14 +503,15 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
 
     # Inference.
     prev_actions = actions.read(actor_ids)
-    input_ = encode((env_outputs, prev_actions))
+    input_ = encode((prev_actions, env_outputs))
     prev_agent_states = agent_states.read(actor_ids)
     def make_inference_fn(inference_device):
       def device_specific_inference_fn():
         with tf.device(inference_device):
           @tf.function
           def agent_inference(*args):
-            return agent(*decode(args), is_training=True)
+            return agent(*decode(args), is_training=False,
+                         postprocess_action=False)
 
           return agent_inference(*input_, prev_agent_states)
 

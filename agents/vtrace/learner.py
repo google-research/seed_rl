@@ -74,7 +74,8 @@ def compute_loss(parametric_action_distribution, agent, agent_state,
                  prev_actions, env_outputs, agent_outputs):
   # agent((prev_actions[t], env_outputs[t]), agent_state)
   #   -> agent_outputs[t], agent_state'
-  learner_outputs, _ = agent((prev_actions, env_outputs),
+  learner_outputs, _ = agent(prev_actions,
+                             env_outputs,
                              agent_state,
                              unroll=True,
                              is_training=True,
@@ -219,7 +220,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     def create_variables(*args):
       return agent.get_action(*decode(args))
 
-    initial_agent_output, _ = create_variables(input_, initial_agent_state)
+    initial_agent_output, _ = create_variables(*input_, initial_agent_state)
     # Create optimizer.
     iter_frame_ratio = (
         FLAGS.batch_size * FLAGS.unroll_length * FLAGS.num_action_repeats)
@@ -364,7 +365,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
             return agent(*decode(args), is_training=False,
                          postprocess_action=False)
 
-          return agent_inference(input_, prev_agent_states)
+          return agent_inference(*input_, prev_agent_states)
 
       return device_specific_inference_fn
 

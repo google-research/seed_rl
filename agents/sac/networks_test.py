@@ -48,8 +48,8 @@ class NetworkTest(tf.test.TestCase):
     state = agent.initial_state(10)
 
     # Run in one call.
-    v_one_call = agent.get_V(env_output, prev_action, state)
-    q_one_call = agent.get_Q(env_output, prev_action, state, action)
+    v_one_call = agent.get_V(prev_action, env_output, state)
+    q_one_call = agent.get_Q(prev_action, env_output, state, action)
 
     # Run step-by-step.
     v_many_calls = []
@@ -60,12 +60,15 @@ class NetworkTest(tf.test.TestCase):
       expanded_env_output_i = tf.nest.map_structure(lambda t: t[i, tf.newaxis],
                                                     env_output)
       v_many_calls.append(
-          agent.get_V(expanded_env_output_i, prev_action[i, tf.newaxis],
+          agent.get_V(prev_action[i, tf.newaxis],
+                      expanded_env_output_i,
                       state)[0])
       q_many_calls.append(
-          agent.get_Q(expanded_env_output_i, prev_action[i, tf.newaxis], state,
+          agent.get_Q(prev_action[i, tf.newaxis],
+                      expanded_env_output_i,
+                      state,
                       action[i, tf.newaxis])[0])
-      unused_action, state = agent(env_output_i, prev_action[i], state)
+      unused_action, state = agent(prev_action[i], env_output_i, state)
     v_many_calls = tf.stack(v_many_calls)
     q_many_calls = tf.stack(q_many_calls)
 

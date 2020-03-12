@@ -72,7 +72,7 @@ class UniformBoundActionSpaceWrapper(gym.Env):
                                        dtype=np.float32)
 
   def step(self, action):
-    assert np.abs(action).max() < 1.00001
+    assert np.abs(action).max() < 1.00001, 'Action: %s' % action
     action = np.clip(action, -1, 1)
     assert self.action_space.contains(action)
     action = self.center + action * (self.high - self.center)

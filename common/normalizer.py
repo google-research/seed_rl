@@ -27,8 +27,7 @@ class Normalizer(tf.Module):
     Args:
       eps: A constant added to the standard deviation of data before
         normalization.
-      clip_range: Normalized values are clipped to this range. [-5, 5] is the
-        default.
+      clip_range: Normalized values are clipped to this range.
     """
     super(Normalizer, self).__init__()
     self.eps = eps
@@ -36,6 +35,9 @@ class Normalizer(tf.Module):
     self.initialized = False
 
   def build(self, input_shape):
+    assert not self.initialized
+    self.initialized = True
+
     size = input_shape[-1]
     def get_variable(name, initial_value, local):  
       if local:
@@ -65,7 +67,6 @@ class Normalizer(tf.Module):
     self.sumsq = get_variable('sumsq', tf.zeros(shape=[size]), local=False)
     self.mean = get_variable('mean', tf.zeros(shape=[size]), local=False)
     self.std = get_variable('std', tf.zeros(shape=[size]), local=False)
-    self.initialized = True
 
   def update(self, input_, only_accumulate=False):
     """Update normalization statistics.
@@ -148,3 +149,55 @@ class Normalizer(tf.Module):
       for i in range(var.shape[0]):
         logs['%s/%d' % (key, i)] = var[i]
     return logs
+
+
+class NormalizeObservationsWrapper(tf.Module):
+  """Wrapper which adds observation normalization to a policy.
+
+  Works for V-trace and SAC policies.
+  """
+
+  def __init__(self, policy, normalizer):
+    self.policy = policy
+    self.normalizer = normalizer
+
+  def _norm_env_output(self, env_outputs):
+    return env_outputs._replace(
+        observation=self.normalizer(env_outputs.observation))
+
+  @tf.function
+  def initial_state(self, *args, **kwargs):
+    return self.policy.initial_state(*args, **kwargs)
+
+  # Not clear why, but if "@tf.function" declarator is placed directly onto
+  # __call__, training fails with "uninitialized variable *baseline".
+  # when running on multiple learning tpu cores.
+
+
+  @tf.function
+  def get_action(self, *args, **kwargs):
+    return self.__call__(*args, **kwargs)
+
+  def __call__(self, prev_actions, env_outputs, *args,
+               is_training=False, **kwargs):
+    if is_training:
+      self.normalizer.update(env_outputs.observation, only_accumulate=True)
+
+    return self.policy(prev_actions, self._norm_env_output(env_outputs), *args,
+                       is_training=is_training, **kwargs)
+
+  def end_of_training_step_callback(self):
+    self.normalizer.finish_update()
+
+  # The methods below are only used by SAC policies.
+  def get_Q(self, prev_action, env_output, *args, **kwargs):
+    return self.policy.get_Q(
+        prev_action, self._norm_env_output(env_output), *args, **kwargs)
+
+  def get_V(self, prev_action, env_output, *args, **kwargs):
+    return self.policy.get_V(
+        prev_action, self._norm_env_output(env_output), *args, **kwargs)
+
+  def get_action_params(self, prev_action, env_output, *args, **kwargs):
+    return self.policy.get_action_params(
+        prev_action, self._norm_env_output(env_output), *args, **kwargs)

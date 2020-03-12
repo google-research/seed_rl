@@ -25,8 +25,7 @@ AgentOutput = collections.namedtuple('AgentOutput',
 class MLPandLSTM(tf.Module):
   """MLP+stacked LSTM Agent."""
 
-  def __init__(self, parametric_action_distribution, mlp_sizes, lstm_sizes,
-               obs_normalizer=None):
+  def __init__(self, parametric_action_distribution, mlp_sizes, lstm_sizes):
     """Creates an MLP followed by a stacked LSTM agent.
 
     Args:
@@ -34,11 +33,9 @@ class MLPandLSTM(tf.Module):
         specifing a parametric distribution over actions to be used
       mlp_sizes: list of integers with sizes of hidden MLP layers
       lstm_sizes: list of integers with sizes of LSTM layers
-      obs_normalizer: normalizer used to preprocess observations.
     """
     super(MLPandLSTM, self).__init__(name='MLPandLSTM')
     self._parametric_action_distribution = parametric_action_distribution
-    self.obs_normalizer = obs_normalizer
 
     # MLP
     mlp_layers = [tf.keras.layers.Dense(size, 'relu') for size in mlp_sizes]
@@ -80,13 +77,6 @@ class MLPandLSTM(tf.Module):
       prev_actions, env_outputs = tf.nest.map_structure(
           lambda t: tf.expand_dims(t, 0), (prev_actions, env_outputs))
 
-    if self.obs_normalizer:
-      if is_training:
-        self.obs_normalizer.update(env_outputs.observation,
-                                   only_accumulate=True)
-      env_outputs = env_outputs._replace(
-          observation=self.obs_normalizer(env_outputs.observation))
-
     outputs, core_state = self._unroll(prev_actions, env_outputs, core_state)
     if not unroll:
       # Remove time dimension.
@@ -118,8 +108,3 @@ class MLPandLSTM(tf.Module):
     outputs = tf.stack(core_output_list)
 
     return utils.batch_apply(self._head, (outputs,)), core_state
-
-  def end_of_training_step_callback(self):
-    # This is necessary to finish the normalizer update if running on TPU.
-    if self.obs_normalizer:
-      self.obs_normalizer.finish_update()

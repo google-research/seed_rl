@@ -112,6 +112,8 @@ def compute_loss(parametric_action_distribution, agent, target_agent,
   inputs = (prev_actions[:-1],
             tf.nest.map_structure(lambda t: t[:-1], env_outputs), agent_state)
 
+  # this is called to update observation normalization (if used)
+  agent(*inputs, is_training=True)
   # run actor
   action_params = agent.get_action_params(*inputs)
   action = parametric_action_distribution.sample(action_params)
@@ -358,8 +360,8 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     @tf.function
     def update_target_agent(polyak):
       """Synchronizes training and target agent variables."""
-      variables = agent.trainable_variables
-      target_variables = target_agent.trainable_variables
+      variables = agent.variables
+      target_variables = target_agent.variables
       assert len(target_variables) == len(variables), (
           'Mismatch in number of net tensors: {} != {}'.format(
               len(target_variables), len(variables)))
@@ -412,6 +414,11 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
       optimizer.apply_gradients(zip(temp_grads, agent.trainable_variables))
 
     strategy.experimental_run_v2(apply_gradients, (loss,))
+
+    try:
+      agent.end_of_training_step_callback()
+    except AttributeError:
+      logging.info('end_of_episode_callback() not found')
 
     return logs
 

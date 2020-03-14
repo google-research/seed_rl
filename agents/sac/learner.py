@@ -22,8 +22,6 @@ Included features:
 - arbitrary action distributions (for non-reparametrizable distributions
 the actor gradient is computed with Policy Gradients)
 - bootstrapping from V-function or directly from Q-function
-
-Not included:
 - entropy coefficient adjustment (i.e. entropy constraint)
 """
 
@@ -67,6 +65,10 @@ flags.DEFINE_float('replay_ratio', 4,
                    'Average number of times each observation is replayed.')
 # Loss settings.
 flags.DEFINE_float('entropy_cost', 0.01, 'Entropy cost/multiplier.')
+flags.DEFINE_float('target_entropy', None, 'If not None, the entropy cost is '
+                   'automatically adjusted to reach the desired entropy level.')
+flags.DEFINE_float('entropy_cost_adjustment_speed', 1., 'Controls how fast '
+                   'the entropy cost coefficient is adjusted.')
 flags.DEFINE_float('discounting', .99, 'Discounting factor.')
 flags.DEFINE_float('max_abs_reward', 0.,
                    'Maximum absolute reward when calculating loss.'
@@ -127,12 +129,14 @@ def compute_loss(parametric_action_distribution, agent, target_agent,
     q_action = agent.get_Q(*inputs, action=action)
     logp_action = parametric_action_distribution.log_prob(action_params, action)
     min_q = tf.reduce_min(q_action, axis=-1)  # min over 2 critics
-    actor_objective = min_q - FLAGS.entropy_cost * logp_action
+    actor_objective = (min_q -
+                       tf.stop_gradient(agent.entropy_cost()) * logp_action)
 
     if parametric_action_distribution.reparametrizable:  # DDPG-style gradient
       grad_action = tape.gradient(min_q, action)
       actor_loss = -tf.reduce_mean(tf.stop_gradient(grad_action) * action)
-      actor_loss -= FLAGS.entropy_cost * tf.reduce_mean(entropy)
+      actor_loss -= (tf.stop_gradient(agent.entropy_cost())
+                     * tf.reduce_mean(entropy))
     else:  # policy gradients
       advantage = tf.stop_gradient(actor_objective - v)
       advantage -= tf.reduce_mean(advantage)
@@ -155,7 +159,7 @@ def compute_loss(parametric_action_distribution, agent, target_agent,
     next_q = tf.reduce_min(next_q, axis=-1)  # minimum over 2 Q-networks
     next_entropy = parametric_action_distribution.entropy(
         next_action_params)[1:]
-    next_v = next_q + FLAGS.entropy_cost * next_entropy
+    next_v = next_q + tf.stop_gradient(agent.entropy_cost()) * next_entropy
   elif FLAGS.bootstrap_net == 'v':
     next_v = target_agent.get_V(*target_inputs)[1:]
   else:
@@ -165,7 +169,14 @@ def compute_loss(parametric_action_distribution, agent, target_agent,
   q_error = q_old_action - tf.expand_dims(target_q, axis=-1)
   q_loss = tf.reduce_mean(tf.square(q_error))
 
-  total_loss = actor_loss + q_loss + v_loss
+  # Entropy cost adjustment (Langrange multiplier style)
+  if FLAGS.target_entropy:
+    entropy_adjustment_loss = agent.entropy_cost() * tf.stop_gradient(
+        tf.reduce_mean(entropy) - FLAGS.target_entropy)
+  else:
+    entropy_adjustment_loss = 0. * agent.entropy_cost()  # to avoid None in grad
+
+  total_loss = actor_loss + q_loss + v_loss + entropy_adjustment_loss
 
   # logging
   del log_keys[:]
@@ -195,6 +206,7 @@ def compute_loss(parametric_action_distribution, agent, target_agent,
   log('policy/max_action_abs(before_tanh)',
       tf.reduce_max(tf.abs(action)))
   log('policy/entropy', entropy)
+  log('policy/entropy_cost', agent.entropy_cost())
 
   return total_loss, log_values
 
@@ -346,6 +358,16 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   with strategy.scope():
     # Initialize variables
     def initialize_agent_variables(agent):
+      if not hasattr(agent, 'entropy_cost'):
+        mul = FLAGS.entropy_cost_adjustment_speed
+        agent.entropy_cost_param = tf.Variable(
+            tf.math.log(FLAGS.entropy_cost) / mul,
+            # Without the constraint, the param gradient may get rounded to 0
+            # for very small values.
+            constraint=lambda v: tf.clip_by_value(v, -20 / mul, 20 / mul),
+            trainable=True,
+            dtype=tf.float32)
+        agent.entropy_cost = lambda: tf.exp(mul * agent.entropy_cost_param)
       @tf.function
       def create_variables():
         return [agent.get_action(*decode(input_no_time)),

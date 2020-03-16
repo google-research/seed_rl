@@ -28,10 +28,10 @@ get_descendants ()
 }
 
 processes=''
-for C in `tmux list-panes -s -F "#{pane_pid} #{pane_current_command}" 2> /dev/null | grep -v tmux | awk '{print $1}'`; do
+for C in `tmux list-panes -t seed_rl -s -F "#{pane_pid} #{pane_current_command}" 2> /dev/null | grep -v tmux | awk '{print $1}'`; do
   processes+=$(get_descendants $C)
 done
 if [[ $processes != '' ]]; then
   kill -9 $processes
+  tmux kill-session -t seed_rl
 fi
-tmux kill-session -t seed_rl

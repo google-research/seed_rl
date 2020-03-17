@@ -115,7 +115,7 @@ def compute_loss(parametric_action_distribution, agent, target_agent,
             tf.nest.map_structure(lambda t: t[:-1], env_outputs), agent_state)
 
   # this is called to update observation normalization (if used)
-  agent(*inputs, is_training=True)
+  agent(*inputs, is_training=True, unroll=True)
   # run actor
   action_params = agent.get_action_params(*inputs)
   action = parametric_action_distribution.sample(action_params)

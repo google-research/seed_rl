@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-
+SEED_RL_SESSION=$1
 get_descendants ()
 {
   local children=$(ps -o pid= --ppid "$1")
@@ -27,11 +27,18 @@ get_descendants ()
   fi
 }
 
+if [ ! -n "${SEED_RL_SESSION}" ]; then
+  echo "SEED_RL tmux session not specified."
+  echo "Running sessions:"
+  tmux list-sessions -F#{session_name}
+  exit 1
+fi
+echo "Shutting down ${SEED_RL_SESSION}."
 processes=''
-for C in `tmux list-panes -t seed_rl -s -F "#{pane_pid} #{pane_current_command}" 2> /dev/null | grep -v tmux | awk '{print $1}'`; do
+for C in `tmux list-panes -t ${SEED_RL_SESSION} -s -F "#{pane_pid} #{pane_current_command}" 2> /dev/null | grep -v tmux | awk '{print $1}'`; do
   processes+=$(get_descendants $C)
 done
 if [[ $processes != '' ]]; then
-  kill -9 $processes
-  tmux kill-session -t seed_rl
+  kill -9 $processes 2> /dev/null
+  tmux kill-session -t ${SEED_RL_SESSION}
 fi

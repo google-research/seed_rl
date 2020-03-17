@@ -50,6 +50,10 @@ flags.DEFINE_string('init_checkpoint', None,
 
 # Loss settings.
 flags.DEFINE_float('entropy_cost', 0.00025, 'Entropy cost/multiplier.')
+flags.DEFINE_float('target_entropy', None, 'If not None, the entropy cost is '
+                   'automatically adjusted to reach the desired entropy level.')
+flags.DEFINE_float('entropy_cost_adjustment_speed', 10., 'Controls how fast '
+                   'the entropy cost coefficient is adjusted.')
 flags.DEFINE_float('baseline_cost', .5, 'Baseline cost/multiplier.')
 flags.DEFINE_float('kl_cost', 0., 'KL(old_policy|new_policy) loss multiplier.')
 flags.DEFINE_float('discounting', .99, 'Discounting factor.')
@@ -121,13 +125,21 @@ def compute_loss(parametric_action_distribution, agent, agent_state,
   # Entropy reward
   entropy = tf.reduce_mean(
       parametric_action_distribution.entropy(learner_outputs.policy_logits))
-  entropy_loss = FLAGS.entropy_cost * -entropy
+  entropy_loss = tf.stop_gradient(agent.entropy_cost()) * -entropy
 
   # KL(old_policy|new_policy) loss
   kl = behaviour_action_log_probs - target_action_log_probs
   kl_loss = FLAGS.kl_cost * tf.reduce_mean(kl)
 
-  total_loss = policy_loss + v_loss + entropy_loss + kl_loss
+  # Entropy cost adjustment (Langrange multiplier style)
+  if FLAGS.target_entropy:
+    entropy_adjustment_loss = agent.entropy_cost() * tf.stop_gradient(
+        tf.reduce_mean(entropy) - FLAGS.target_entropy)
+  else:
+    entropy_adjustment_loss = 0. * agent.entropy_cost()  # to avoid None in grad
+
+  total_loss = (policy_loss + v_loss + entropy_loss + kl_loss +
+                entropy_adjustment_loss)
 
   # logging
   del log_keys[:]
@@ -156,6 +168,7 @@ def compute_loss(parametric_action_distribution, agent, agent_state,
   log('policy/max_action_abs(before_tanh)',
       tf.reduce_max(tf.abs(agent_outputs.action)))
   log('policy/entropy', entropy)
+  log('policy/entropy_cost', agent.entropy_cost())
   log('policy/kl(old|new)', tf.reduce_mean(kl))
 
   return total_loss, log_values
@@ -221,6 +234,17 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
       return agent.get_action(*decode(args))
 
     initial_agent_output, _ = create_variables(*input_, initial_agent_state)
+
+    if not hasattr(agent, 'entropy_cost'):
+      mul = FLAGS.entropy_cost_adjustment_speed
+      agent.entropy_cost_param = tf.Variable(
+          tf.math.log(FLAGS.entropy_cost) / mul,
+          # Without the constraint, the param gradient may get rounded to 0
+          # for very small values.
+          constraint=lambda v: tf.clip_by_value(v, -20 / mul, 20 / mul),
+          trainable=True,
+          dtype=tf.float32)
+      agent.entropy_cost = lambda: tf.exp(mul * agent.entropy_cost_param)
     # Create optimizer.
     iter_frame_ratio = (
         FLAGS.batch_size * FLAGS.unroll_length * FLAGS.num_action_repeats)

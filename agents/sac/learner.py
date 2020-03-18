@@ -110,6 +110,7 @@ def compute_loss(parametric_action_distribution, agent, target_agent,
     rewards = tf.clip_by_value(rewards, -FLAGS.max_abs_reward,
                                FLAGS.max_abs_reward)
 
+  # Networks expect postprocessed prev_actions but it's done during inference.
   target_inputs = (prev_actions, env_outputs, agent_state)
   inputs = (prev_actions[:-1],
             tf.nest.map_structure(lambda t: t[:-1], env_outputs), agent_state)
@@ -531,7 +532,8 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     actor_infos.add(actor_ids, (FLAGS.num_action_repeats, 0., 0.))
 
     # Inference.
-    prev_actions = actions.read(actor_ids)
+    prev_actions = parametric_action_distribution.postprocess(
+        actions.read(actor_ids))
     input_ = encode((prev_actions, env_outputs))
     prev_agent_states = agent_states.read(actor_ids)
     def make_inference_fn(inference_device):

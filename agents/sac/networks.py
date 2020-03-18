@@ -62,7 +62,7 @@ class ActorCriticMLP(tf.Module):
         observation field is used by this agent. It should have the shape
         [time, batch_size, observation_size].
       prev_action: [time, batch_size, action_size] tensor with previous actions
-        taken in the environment (before postprocessing). Not used by this
+        taken in the environment (after postprocessing). Not used by this
         agent.
       state: Agent state at the first timestep. Not used by this agent.
       action: [time, batch_size, action_size] tensor with actions for which we
@@ -231,13 +231,10 @@ class ActorCriticLSTM(tf.Module):
   def initial_state(self, batch_size):
     return [net.initial_state(batch_size) for net in self._networks]
 
-  def _prepare_action_input(self, action):
-    return tf.cast(self._action_distribution.postprocess(action), tf.float32)
-
   def _run_net(self, net, prev_action, env_output, state, ff_input,
                only_return_new_state=False):
-    action_input = self._prepare_action_input(prev_action)
-    recurrent_input = tf.concat(values=[env_output.observation, action_input],
+    recurrent_input = tf.concat(values=[env_output.observation,
+                                        tf.cast(prev_action, tf.float32)],
                                 axis=-1)
     return net(ff_input=ff_input,
                recurrent_input=recurrent_input,
@@ -253,15 +250,17 @@ class ActorCriticLSTM(tf.Module):
         shapes start with [time, batch_size]. The done field denotes *before*
         which timesteps to reset the hidden state.
       prev_action: [time, batch_size, action_size] tensor with previous actions
-        taken in the environment (before postprocessing).
+        taken in the environment (after postprocessing).
       state: Agent state at the first timestep.
       action: [time, batch_size, action_size] tensor with actions for which we
         compute Q-values (before postprocessing).
     Returns:
       [time, batch_size, n_critics] tensor with state-action values.
     """
-    ff_input = tf.concat(values=[env_output.observation,
-                                 self._prepare_action_input(action)], axis=-1)
+    ff_input = tf.concat(values=[
+        env_output.observation,
+        tf.cast(self._action_distribution.postprocess(action), tf.float32)],
+                         axis=-1)
     q_values = [self._run_net(net, prev_action, env_output, state=net_state,
                               ff_input=ff_input)[0]
                 for (net, net_state) in zip(self._q_nets, state[2:])]

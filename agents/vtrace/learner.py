@@ -76,6 +76,7 @@ log_keys = []  # array of strings with names of values logged by compute_loss
 
 def compute_loss(parametric_action_distribution, agent, agent_state,
                  prev_actions, env_outputs, agent_outputs):
+  # Networks expect postprocessed prev_actions but it's done during inference.
   # agent((prev_actions[t], env_outputs[t]), agent_state)
   #   -> agent_outputs[t], agent_state'
   learner_outputs, _ = agent(prev_actions,
@@ -378,7 +379,8 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     actor_infos.add(actor_ids, (FLAGS.num_action_repeats, 0., 0.))
 
     # Inference.
-    prev_actions = actions.read(actor_ids)
+    prev_actions = parametric_action_distribution.postprocess(
+        actions.read(actor_ids))
     input_ = encode((prev_actions, env_outputs))
     prev_agent_states = agent_states.read(actor_ids)
     def make_inference_fn(inference_device):

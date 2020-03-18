@@ -72,6 +72,24 @@ class MLPandLSTM(tf.Module):
 
   def __call__(self, prev_actions, env_outputs, core_state, unroll=False,
                is_training=False, postprocess_action=True):
+    """Runs the agent.
+
+    Args:
+      prev_actions: Previous action (after postprocessing). Not used by this
+        agent.
+      env_outputs: Structure with reward, done and observation fields. Only
+        observation field is used by this agent. It should have the shape
+        [time, batch_size, observation_size].
+      core_state: Agent state.
+      unroll: Should be True if inputs contain the time dimension and False
+        otherwise.
+      is_training: Whether we are in the loss computation. Not used by this
+        agent.
+      postprocess_action: Whether the action should be postprocessed (e.g. by
+        applying tanh).
+    Returns:
+      A structure with action, policy_logits and baseline.
+    """
     if not unroll:
       # Add time dimension.
       prev_actions, env_outputs = tf.nest.map_structure(

@@ -71,11 +71,11 @@ class GFootball(tf.Module):
   Four blocks instead of three in ImpalaAtariDeep.
   """
 
-  def __init__(self, num_actions):
+  def __init__(self, parametric_action_distribution):
     super(GFootball, self).__init__(name='gfootball')
 
     # Parameters and layers for unroll.
-    self._num_actions = num_actions
+    self._parametric_action_distribution = parametric_action_distribution
 
     # Parameters and layers for _torso.
     self._stacks = [
@@ -87,7 +87,7 @@ class GFootball(tf.Module):
 
     # Layers for _head.
     self._policy_logits = tf.keras.layers.Dense(
-        self._num_actions,
+        self._parametric_action_distribution.param_size,
         name='policy_logits',
         kernel_initializer='lecun_normal')
     self._baseline = tf.keras.layers.Dense(
@@ -117,8 +117,7 @@ class GFootball(tf.Module):
     baseline = tf.squeeze(self._baseline(core_output), axis=-1)
 
     # Sample an action from the policy.
-    new_action = tf.random.categorical(policy_logits, 1, dtype=tf.int64)
-    new_action = tf.squeeze(new_action, 1, name='action')
+    new_action = self._parametric_action_distribution.sample(policy_logits)
 
     return AgentOutput(new_action, policy_logits, baseline)
 
@@ -137,10 +136,17 @@ class GFootball(tf.Module):
       # Add time dimension.
       prev_actions, env_outputs = tf.nest.map_structure(
           lambda t: tf.expand_dims(t, 0), (prev_actions, env_outputs))
+
     outputs, core_state = self._unroll(prev_actions, env_outputs, core_state)
+
     if not unroll:
       # Remove time dimension.
       outputs = tf.nest.map_structure(lambda t: tf.squeeze(t, 0), outputs)
+
+    if postprocess_action:
+      outputs = outputs._replace(
+          action=self._parametric_action_distribution.postprocess(
+              outputs.action))
 
     return outputs, core_state
 

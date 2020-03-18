@@ -96,14 +96,15 @@ class MLPandLSTM(tf.Module):
           lambda t: tf.expand_dims(t, 0), (prev_actions, env_outputs))
 
     outputs, core_state = self._unroll(prev_actions, env_outputs, core_state)
+
     if not unroll:
       # Remove time dimension.
       outputs = tf.nest.map_structure(lambda t: tf.squeeze(t, 0), outputs)
 
     if postprocess_action:
-      outputs = AgentOutput(
-          self._parametric_action_distribution.postprocess(outputs.action),
-          outputs.policy_logits, outputs.baseline)
+      outputs = outputs._replace(
+          action=self._parametric_action_distribution.postprocess(
+              outputs.action))
 
     return outputs, core_state
 

@@ -534,5 +534,28 @@ class MinimizeTest(tf.test.TestCase, parameterized.TestCase):
     self.assertAllClose([expected_a, expected_a], a_values)
 
 
+class ProgressLoggerTest(tf.test.TestCase):
+
+  def test_logger(self):
+    logger = utils.ProgressLogger()
+    logger.start()
+    logger._log()
+
+    @tf.function(input_signature=(tf.TensorSpec([], tf.int32, 'value'),))
+    def log_something(value):
+      session = logger.log_session()
+      logger.log(session, 'value_1', value)
+      logger.log(session, 'value_2', value + 1)
+      logger.step_end(session)
+
+    log_something(tf.constant(10))
+    logger._log()
+    self.assertAllEqual(logger.ready_values.read_value(), tf.constant([10, 11]))
+    log_something(tf.constant(15))
+    self.assertAllEqual(logger.ready_values.read_value(), tf.constant([15, 16]))
+    logger._log()
+    logger.shutdown()
+
+
 if __name__ == '__main__':
   tf.test.main()

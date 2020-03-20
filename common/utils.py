@@ -16,7 +16,8 @@
 
 import collections
 import contextlib
-
+import threading
+import timeit
 from absl import logging
 
 import numpy as np
@@ -382,6 +383,106 @@ class Aggregator(tf.Module):
     tf.nest.assert_same_structure(values, self._state)
     for s, v in zip(tf.nest.flatten(self._state), tf.nest.flatten(values)):
       s.scatter_update(tf.IndexedSlices(v, actor_ids))
+
+
+class ProgressLogger(object):
+  """Helper class for performing periodic logging of the training progress."""
+
+  def __init__(self,
+               summary_writer=None,
+               initial_period=0.01,
+               period_factor=1.01,
+               max_period=10.0):
+    """Constructs ProgressLogger.
+
+    Args:
+      summary_writer: Tensorflow summary writer to use.
+      initial_period: Initial logging period in seconds
+        (how often logging happens).
+      period_factor: Factor by which logging period is
+        multiplied after each iteration (exponential back-off).
+      max_period: Maximal logging period in seconds
+        (the end of exponential back-off).
+    """
+    self.summary_writer = summary_writer
+    self.period = initial_period
+    self.period_factor = period_factor
+    self.max_period = max_period
+    # Array of strings with names of values to be logged.
+    self.log_keys = []
+    self.step_cnt = tf.Variable(-1, dtype=tf.int64)
+    self.ready_values = tf.Variable([-1.0],
+                                    dtype=tf.float32,
+                                    shape=tf.TensorShape(None))
+    self.logger_thread = None
+    self.logging_callback = None
+    self.terminator = None
+    self.last_log_time = timeit.default_timer()
+    self.last_log_step = 0
+
+  def start(self, logging_callback=None):
+    assert self.logger_thread is None
+    self.logging_callback = logging_callback
+    self.terminator = threading.Event()
+    self.logger_thread = threading.Thread(target=self._logging_loop)
+    self.logger_thread.start()
+
+  def shutdown(self):
+    assert self.logger_thread
+    self.terminator.set()
+    self.logger_thread.join()
+    self.logger_thread = None
+
+  def log_session(self):
+    return []
+
+  def log(self, session, name, value):
+    # this is a python op so it happens only when this tf.function is compiled
+    self.log_keys.append(name)
+    # this is a TF op.
+    session.append(value)
+
+  def step_end(self, session, strategy=None, step_increment=1):
+    logs = []
+    for value in session:
+      if strategy:
+        value = tf.cast(
+            strategy.experimental_local_results(value)[0], tf.float32)
+      logs.append(value)
+    self.ready_values.assign(logs)
+    self.step_cnt.assign_add(step_increment)
+
+  def _log(self):
+    """Perform single round of logging."""
+    logging_time = timeit.default_timer()
+    step_cnt = self.step_cnt.read_value()
+    values = self.ready_values.read_value().numpy()
+    if values[0] == -1:
+      return
+    assert len(values) == len(
+        self.log_keys
+    ), 'Mismatch between number of keys and values to log: %r vs %r' % (
+        values, self.log_keys)
+    if self.summary_writer:
+      self.summary_writer.set_as_default()
+    tf.summary.experimental.set_step(step_cnt.numpy())
+    if self.logging_callback:
+      self.logging_callback()
+    for key, value in zip(self.log_keys, values):
+      tf.summary.scalar(key, value)
+    dt = logging_time - self.last_log_time
+    df = tf.cast(step_cnt - self.last_log_step, tf.float32)
+    tf.summary.scalar('speed/steps_per_sec', df / dt)
+    self.last_log_time, self.last_log_step = logging_time, step_cnt
+
+  def _logging_loop(self):
+    while not self.terminator.isSet():
+      last_log_time = self.last_log_time
+      self._log()
+      elapsed = timeit.default_timer() - last_log_time
+      self.period = min(self.period_factor * self.period,
+                        self.max_period)
+      self.terminator.wait(timeout=max(0, self.period - elapsed))
 
 
 class StructuredFIFOQueue(tf.queue.FIFOQueue):

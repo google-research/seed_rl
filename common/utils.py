@@ -446,8 +446,8 @@ class ProgressLogger(object):
     logs = []
     for value in session:
       if strategy:
-        value = tf.cast(
-            strategy.experimental_local_results(value)[0], tf.float32)
+        value = tf.reduce_mean(tf.cast(
+            strategy.experimental_local_results(value)[0], tf.float32))
       logs.append(value)
     self.ready_values.assign(logs)
     self.step_cnt.assign_add(step_increment)

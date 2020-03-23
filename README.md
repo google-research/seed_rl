@@ -3,6 +3,8 @@
 This repository contains an implementation of distributed reinforcement learning
 agent where both training and inference are performed on the learner.
 
+<img src="./docs/architecture.gif" alt="Architecture" width="50%" height="50%">
+
 Two agents are implemented:
 
 - [IMPALA: Scalable Distributed Deep-RL with Importance Weighted Actor-Learner Architectures](https://arxiv.org/abs/1802.01561)

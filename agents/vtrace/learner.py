@@ -276,10 +276,9 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
 
     strategy.experimental_run_v2(apply_gradients, (loss,))
 
-    try:
-      agent.end_of_training_step_callback()
-    except AttributeError:
-      logging.info('end_of_episode_callback() not found')
+    getattr(agent, 'end_of_training_step_callback',
+            lambda: logging.info('end_of_training_step_callback not found'))()
+
     logger.step_end(logs, training_strategy, iter_frame_ratio)
 
   agent_output_specs = tf.nest.map_structure(

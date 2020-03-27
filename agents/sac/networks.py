@@ -54,6 +54,10 @@ class ActorCriticMLP(tf.Module):
   def initial_state(self, batch_size):
     return ()
 
+  def _concat_obs(self, observation):
+    """Concatenate observation fields."""
+    return tf.concat(tf.nest.flatten(observation), axis=-1)
+
   def get_Q(self, prev_action, env_output, state, action):
     """Computes state-action values.
 
@@ -70,12 +74,12 @@ class ActorCriticMLP(tf.Module):
     Returns:
       [time, batch_size, n_critics] tensor with state-action values.
     """
-    input_ = tf.concat(
-        values=[
-            env_output.observation,
-            tf.cast(self._action_distribution.postprocess(action), tf.float32)
-        ],
-        axis=-1)
+    obs = self._concat_obs(env_output.observation)
+    action = tf.cast(self._action_distribution.postprocess(action), tf.float32)
+    if len(action.shape) < len(obs.shape):
+      # 0-dimensional actions
+      action = action[..., tf.newaxis]
+    input_ = tf.concat(values=[obs, action], axis=-1)
     return tf.concat(values=[critic(input_) for critic in self._q_mlp],
                      axis=-1)
 
@@ -85,7 +89,8 @@ class ActorCriticMLP(tf.Module):
     Args: See get_Q above.
     Returns: [time, batch_size] tensor with state values.
     """
-    return tf.squeeze(self._v_mlp(env_output.observation), axis=-1)
+    return tf.squeeze(self._v_mlp(self._concat_obs(env_output.observation)),
+                      axis=-1)
 
   def get_action_params(self, prev_action, env_output, state):
     """Returns action distribution parameters (i.e. actor network outputs).
@@ -93,7 +98,7 @@ class ActorCriticMLP(tf.Module):
     Args: See get_Q above.
     Returns: [time, batch_size, *] tensor with action distribution parameters.
     """
-    return self._actor_mlp(env_output.observation)
+    return self._actor_mlp(self._concat_obs(env_output.observation))
 
   # Not clear why, but if "@tf.function" declarator is placed directly onto
   # __call__, training fails with "uninitialized variable *baseline".
@@ -231,12 +236,29 @@ class ActorCriticLSTM(tf.Module):
   def initial_state(self, batch_size):
     return [net.initial_state(batch_size) for net in self._networks]
 
+  def _concat_obs(self, observation):
+    if observation is None:
+      return None
+    return tf.concat(values=tf.nest.flatten(observation), axis=-1)
+
   def _run_net(self, net, prev_action, env_output, state, ff_input,
                only_return_new_state=False):
-    recurrent_input = tf.concat(values=[env_output.observation,
-                                        tf.cast(prev_action, tf.float32)],
-                                axis=-1)
-    return net(ff_input=ff_input,
+    if tf.nest.is_nested(env_output.observation):  # gym.GoalEnv
+      for key in ['achieved_goal', 'desired_goal', 'observation']:
+        assert key in env_output.observation.keys()
+      obs = env_output.observation.copy()
+      # We don't feed goals to the recurrent part of the network because
+      # they're inconsistent in the rollouts sampled with HER.
+      del obs['desired_goal']
+    else:
+      obs = env_output.observation
+    obs = self._concat_obs(obs)
+    if len(prev_action.shape) < len(obs.shape):
+      # 0-dimensional actions
+      prev_action = prev_action[..., tf.newaxis]
+    recurrent_input = tf.concat(
+        values=[obs, tf.cast(prev_action, tf.float32)], axis=-1)
+    return net(ff_input=self._concat_obs(ff_input),
                recurrent_input=recurrent_input,
                core_state=state,
                done=env_output.done,
@@ -257,8 +279,12 @@ class ActorCriticLSTM(tf.Module):
     Returns:
       [time, batch_size, n_critics] tensor with state-action values.
     """
+    obs = self._concat_obs(env_output.observation)
+    if len(action.shape) < len(obs.shape):
+      # 0-dimensional actions
+      action = action[..., tf.newaxis]
     ff_input = tf.concat(values=[
-        env_output.observation,
+        obs,
         tf.cast(self._action_distribution.postprocess(action), tf.float32)],
                          axis=-1)
     q_values = [self._run_net(net, prev_action, env_output, state=net_state,

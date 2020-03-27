@@ -32,6 +32,7 @@ import time
 
 from absl import flags
 from absl import logging
+import numpy as np
 
 from seed_rl import grpc
 from seed_rl.common import common_flags  
@@ -61,6 +62,14 @@ flags.DEFINE_integer('replay_buffer_size', int(1e6),
                      'Size of the replay buffer (in number of unrolls stored).')
 flags.DEFINE_float('replay_ratio', 4,
                    'Average number of times each observation is replayed.')
+flags.DEFINE_integer('her_window_length', None, 'If not None, then Hindsight '
+                     'Experience Replay is used and this parameter determines '
+                     'the size (in environment steps) of the window from which '
+                     'hindsight goals are sampled.')
+flags.DEFINE_float('her_substitution_probability', 0.8, 'Probability of '
+                   'substituting each goal if HER is used. Substituted goals '
+                   'are sampled uniformly from subsequently achieved goals in '
+                   'the same window.')
 # Loss settings.
 flags.DEFINE_float('entropy_cost', 0.01, 'Entropy cost/multiplier.')
 flags.DEFINE_float('target_entropy', None, 'If not None, the entropy cost is '
@@ -109,9 +118,20 @@ def compute_loss(logger, parametric_action_distribution, agent, target_agent,
                                FLAGS.max_abs_reward)
 
   # Networks expect postprocessed prev_actions but it's done during inference.
-  target_inputs = (prev_actions, env_outputs, agent_state)
   inputs = (prev_actions[:-1],
             tf.nest.map_structure(lambda t: t[:-1], env_outputs), agent_state)
+  if FLAGS.her_window_length:
+    # Shift the desired goals for the target batch so that we bootstrap from
+    # the right goals.
+    observation = env_outputs.observation.copy()
+    observation['desired_goal'] = tf.concat(values=[
+        observation['desired_goal'][:1] * np.nan,  # this value is not used
+        observation['desired_goal'][:-1]  # same goals as in the main batch
+    ], axis=0)
+    target_inputs = (prev_actions,
+                     env_outputs._replace(observation=observation), agent_state)
+  else:
+    target_inputs = (prev_actions, env_outputs, agent_state)
 
   # this is called to update observation normalization (if used)
   agent(*inputs, is_training=True, unroll=True)
@@ -275,6 +295,11 @@ def create_dataset(unroll_queue, replay_buffer, strategy, batch_size, encode):
 def get_replay_insertion_batch_size(per_replica=False):
   insertion_per_replica = int(
       FLAGS.batch_size / FLAGS.replay_ratio / FLAGS.num_training_tpus)
+  if FLAGS.her_window_length:
+    # We insert chunks of length her_window_length but pull from the buffer
+    # unrolls of length unroll_length.
+    insertion_per_replica *= FLAGS.unroll_length
+    insertion_per_replica //= FLAGS.her_window_length
   if per_replica:
     return insertion_per_replica
   else:
@@ -292,6 +317,9 @@ def validate_config():
       'Replay ratio is bigger than batch size per replica.')
   assert FLAGS.num_actors >= FLAGS.inference_batch_size, (
       'Inference batch size is bigger than the number of actors.')
+  if FLAGS.her_window_length:
+    assert FLAGS.her_window_length >= FLAGS.unroll_length, (
+        'The HER window can not be shorter than the unroll length.')
 
 
 def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
@@ -322,8 +350,9 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   env_output_specs = utils.EnvOutput(
       tf.TensorSpec([], tf.float32, 'reward'),
       tf.TensorSpec([], tf.bool, 'done'),
-      tf.TensorSpec(env.observation_space.shape, env.observation_space.dtype,
-                    'observation'),
+      tf.nest.map_structure(
+          lambda s: tf.TensorSpec(s.shape, s.dtype, 'observation'),
+          env.observation_space.__dict__.get('spaces', env.observation_space))
   )
   action_specs = tf.TensorSpec(env.action_space.shape,
                                env.action_space.dtype, 'action')
@@ -385,7 +414,8 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
 
     # Create optimizer.
     iter_frame_ratio = (get_replay_insertion_batch_size(per_replica=False) *
-                        FLAGS.unroll_length * FLAGS.num_action_repeats)
+                        (FLAGS.her_window_length or FLAGS.unroll_length)
+                        * FLAGS.num_action_repeats)
     final_iteration = int(
         math.ceil(FLAGS.total_environment_frames / iter_frame_ratio))
     optimizer, learning_rate_fn = create_optimizer_fn(final_iteration)
@@ -426,10 +456,9 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
 
     strategy.experimental_run_v2(apply_gradients, (loss,))
 
-    try:
-      agent.end_of_training_step_callback()
-    except AttributeError:
-      logging.info('end_of_episode_callback() not found')
+    getattr(agent, 'end_of_training_step_callback',
+            lambda: logging.info('end_of_training_step_callback not found'))()
+
     logger.step_end(logs, training_strategy, iter_frame_ratio)
 
   # Logging.
@@ -454,7 +483,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   server = grpc.Server([FLAGS.server_address])
 
   store = utils.UnrollStore(
-      FLAGS.num_actors, FLAGS.unroll_length,
+      FLAGS.num_actors, FLAGS.her_window_length or FLAGS.unroll_length,
       (action_specs, env_output_specs, action_specs))
   actor_run_ids = utils.Aggregator(FLAGS.num_actors,
                                    tf.TensorSpec([], tf.int64, 'run_ids'))
@@ -479,9 +508,18 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
                                            unroll_specs)
   info_queue = utils.StructuredFIFOQueue(-1, info_specs)
 
-  replay_buffer = utils.PrioritizedReplay(FLAGS.replay_buffer_size,
-                                          unroll_specs,
-                                          importance_sampling_exponent=0.)
+  if FLAGS.her_window_length:
+    replay_buffer = utils.HindsightExperienceReplay(
+        FLAGS.replay_buffer_size,
+        unroll_specs,
+        compute_reward_fn=env.compute_reward,
+        unroll_length=FLAGS.unroll_length,
+        importance_sampling_exponent=0.,
+        substitution_probability=FLAGS.her_substitution_probability)
+  else:
+    replay_buffer = utils.PrioritizedReplay(FLAGS.replay_buffer_size,
+                                            unroll_specs,
+                                            importance_sampling_exponent=0.)
 
   def add_batch_size(ts):
     return tf.TensorSpec([FLAGS.inference_batch_size] + list(ts.shape),

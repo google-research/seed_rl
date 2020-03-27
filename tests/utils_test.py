@@ -368,6 +368,81 @@ class PrioritizedReplayTest(tf.test.TestCase):
 
 
 
+class HindsightExperienceReplayTest(tf.test.TestCase):
+
+  def wrap(self, x, y=None):
+    unroll = collections.namedtuple('unroll', 'env_outputs')
+    return unroll(
+        env_outputs=utils.EnvOutput(
+            observation={
+                'achieved_goal': x,
+                'desired_goal': y if (y is not None) else x
+            },
+            done=tf.zeros(x.shape[:-1], tf.bool),
+            reward=tf.zeros(x.shape[:-1], tf.float32)))
+
+  def compute_reward_fn(self, achieved_goal, desired_goal):
+    return tf.norm(tf.cast(achieved_goal - desired_goal, tf.float32), axis=-1)
+
+  def test_subsampling(self):
+    rb = utils.HindsightExperienceReplay(
+        size=2,
+        specs=self.wrap(tf.TensorSpec([5, 1], tf.int32),
+                        tf.TensorSpec([5, 1], tf.int32)),
+        importance_sampling_exponent=1,
+        unroll_length=2,
+        compute_reward_fn=self.compute_reward_fn,
+        substitution_probability=0.
+        )
+
+    rb.insert(self.wrap(tf.constant([[[10], [20], [30], [40], [50]]])),
+              tf.constant([1.]))
+
+    samples = rb.sample(1000, 1.)[-1].env_outputs.observation['achieved_goal']
+    assert samples.shape == (1000, 3, 1)
+    samples = tf.squeeze(samples, axis=-1)
+    for i in range(samples.shape[0]):
+      assert samples[i][0] in [10, 20, 30]
+      assert samples[i][1] == samples[i][0] + 10
+      assert samples[i][2] == samples[i][0] + 20
+    for val in [10, 20, 30]:
+      assert (samples[:, 0] == val).numpy().any()
+
+  def test_goal_substitution(self):
+    rb = utils.HindsightExperienceReplay(
+        size=2,
+        specs=self.wrap(tf.TensorSpec([5, 2], tf.int32),
+                        tf.TensorSpec([5, 2], tf.int32)),
+        importance_sampling_exponent=1,
+        unroll_length=4,
+        compute_reward_fn=self.compute_reward_fn,
+        substitution_probability=1.
+        )
+
+    rb.insert(self.wrap(
+        tf.constant([[[10, 10], [20, 20], [30, 30], [40, 40], [50, 50]]]),
+        tf.constant([[[100, 100], [200, 200], [300, 300], [400, 400],
+                      [500, 500]]]),
+        ),
+              tf.constant([1.]))
+
+    samples = rb.sample(1000, 1.)[-1].env_outputs.observation
+    for key in ['achieved_goal', 'desired_goal']:
+      assert samples[key].shape == (1000, 5, 2)
+      assert (samples[key][..., 0] == samples[key][..., 1]).numpy().all()
+    samples = tf.nest.map_structure(lambda t: t[..., 0], samples)
+    diffs = set()
+    for i in range(samples['achieved_goal'].shape[0]):
+      assert (samples['achieved_goal'][i] == [10, 20, 30, 40, 50]).numpy().all()
+      for t in range(5):
+        goal = samples['desired_goal'][i][t]
+        assert goal in [10, 20, 30, 40, 50]
+        goal //= 10
+        assert goal > t + 1 or t == 4
+        diffs.add(goal.numpy() - t - 1)
+    assert len(diffs) == 5
+
+
 class TPUEncodeTest(tf.test.TestCase, parameterized.TestCase):
 
   def setUp(self):

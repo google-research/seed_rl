@@ -118,7 +118,8 @@ class Normalizer(tf.Module):
     self.sum.assign_add(sum_increment)
     self.sumsq.assign_add(sumsq_increment)
     self.mean.assign(self.sum / self.steps)
-    self.std.assign(tf.sqrt((self.sumsq / self.steps) - tf.square(self.mean)))
+    self.std.assign(tf.sqrt(tf.maximum(
+        0., (self.sumsq / self.steps) - tf.square(self.mean))))
 
   def __call__(self, input_):
     """Normalize the tensor.
@@ -162,8 +163,13 @@ class NormalizeObservationsWrapper(tf.Module):
     self.normalizer = normalizer
 
   def _norm_env_output(self, env_outputs):
-    return env_outputs._replace(
-        observation=self.normalizer(env_outputs.observation))
+    flat = tf.nest.flatten(env_outputs.observation)
+    normalized = self.normalizer(tf.concat(values=flat, axis=-1))
+    normalized = tf.split(normalized, [t.shape[-1] for t in flat], axis=-1)
+    normalized = tf.nest.pack_sequence_as(env_outputs.observation, normalized)
+    for a, b in zip(tf.nest.flatten(flat), tf.nest.flatten(normalized)):
+      assert a.shape == b.shape
+    return env_outputs._replace(observation=normalized)
 
   @tf.function
   def initial_state(self, *args, **kwargs):
@@ -181,7 +187,9 @@ class NormalizeObservationsWrapper(tf.Module):
   def __call__(self, prev_actions, env_outputs, *args,
                is_training=False, **kwargs):
     if is_training:
-      self.normalizer.update(env_outputs.observation, only_accumulate=True)
+      flat = tf.nest.flatten(env_outputs.observation)
+      self.normalizer.update(tf.concat(values=flat, axis=-1),
+                             only_accumulate=True)
 
     return self.policy(prev_actions, self._norm_env_output(env_outputs), *args,
                        is_training=is_training, **kwargs)

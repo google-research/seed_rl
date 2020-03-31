@@ -31,7 +31,8 @@ from tensorflow.python.framework import tensor_conversion_registry
 
 # `observation` is the observation *after* a transition. When `done` is True,
 # `observation` will be the observation *after* the reset.
-EnvOutput = collections.namedtuple('EnvOutput', 'reward done observation')
+EnvOutput = collections.namedtuple(
+    'EnvOutput', 'reward done observation abandoned episode_step')
 
 
 Settings = collections.namedtuple(

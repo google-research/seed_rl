@@ -109,7 +109,7 @@ class MLPandLSTM(tf.Module):
     return outputs, core_state
 
   def _unroll(self, unused_prev_actions, env_outputs, core_state):
-    unused_reward, done, observation = env_outputs
+    unused_reward, done, observation, _, _ = env_outputs
     observation = self._mlp(observation)
 
     initial_core_state = self._core.get_initial_state(

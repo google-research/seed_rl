@@ -506,6 +506,8 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
       tf.TensorSpec([], tf.bool, 'done'),
       tf.TensorSpec(env.observation_space.shape, env.observation_space.dtype,
                     'observation'),
+      tf.TensorSpec([], tf.bool, 'abandoned'),
+      tf.TensorSpec([], tf.int32, 'episode_step'),
   )
   action_specs = tf.TensorSpec([], tf.int32, 'action')
   num_actions = env.action_space.n
@@ -742,6 +744,10 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     first_agent_states.replace(actors_needing_reset, initial_agent_states)
     agent_states.replace(actors_needing_reset, initial_agent_states)
     actions.reset(actors_needing_reset)
+
+    tf.debugging.assert_non_positive(
+        tf.cast(env_outputs.abandoned, tf.int32),
+        'Abandoned done states are not supported in R2D2.')
 
     # Update steps and return.
     actor_infos.add(actor_ids, (0, env_outputs.reward, raw_rewards))

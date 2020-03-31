@@ -319,7 +319,7 @@ class DuelingLSTMDQNNet(tf.Module):
 
   def _unroll(self, prev_actions, env_outputs, agent_state):
     # [time, batch_size, <field shape>]
-    unused_reward, done, observation = env_outputs
+    unused_reward, done, observation, _, _ = env_outputs
     observation = tf.cast(observation, tf.float32)
 
     initial_agent_state = self.initial_state(batch_size=tf.shape(done)[1])

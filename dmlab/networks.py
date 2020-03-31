@@ -92,7 +92,7 @@ class ImpalaDeep(tf.Module):
     return self._core.get_initial_state(batch_size=batch_size, dtype=tf.float32)
 
   def _torso(self, prev_action, env_output):
-    reward, _, frame = env_output
+    reward, _, frame, _, _ = env_output
 
     # Convert to floats.
     frame = tf.cast(frame, tf.float32)
@@ -146,7 +146,7 @@ class ImpalaDeep(tf.Module):
     return outputs, core_state
 
   def _unroll(self, prev_actions, env_outputs, core_state):
-    unused_reward, done, unused_observation = env_outputs
+    unused_reward, done, unused_observation, _, _ = env_outputs
 
     torso_outputs = utils.batch_apply(self._torso, (prev_actions, env_outputs))
 

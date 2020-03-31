@@ -87,7 +87,7 @@ def compute_loss(logger, parametric_action_distribution, agent, agent_state,
   # At this point, we have unroll length + 1 steps. The last step is only used
   # as bootstrap value, so it's removed.
   agent_outputs = tf.nest.map_structure(lambda t: t[:-1], agent_outputs)
-  rewards, done, _ = tf.nest.map_structure(lambda t: t[1:], env_outputs)
+  rewards, done, _, _, _ = tf.nest.map_structure(lambda t: t[1:], env_outputs)
   learner_outputs = tf.nest.map_structure(lambda t: t[:-1], learner_outputs)
 
   if FLAGS.max_abs_reward:
@@ -201,6 +201,8 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
       tf.TensorSpec([], tf.bool, 'done'),
       tf.TensorSpec(env.observation_space.shape, env.observation_space.dtype,
                     'observation'),
+      tf.TensorSpec([], tf.bool, 'abandoned'),
+      tf.TensorSpec([], tf.int32, 'episode_step'),
   )
   action_specs = tf.TensorSpec(env.action_space.shape,
                                env.action_space.dtype, 'action')
@@ -356,6 +358,10 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     first_agent_states.replace(actors_needing_reset, initial_agent_states)
     agent_states.replace(actors_needing_reset, initial_agent_states)
     actions.reset(actors_needing_reset)
+
+    tf.debugging.assert_non_positive(
+        tf.cast(env_outputs.abandoned, tf.int32),
+        'Abandoned done states are not supported in VTRACE.')
 
     # Update steps and return.
     actor_infos.add(actor_ids, (0, env_outputs.reward, raw_rewards))

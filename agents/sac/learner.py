@@ -110,7 +110,7 @@ def compute_loss(logger, parametric_action_distribution, agent, target_agent,
                  agent_state, prev_actions, env_outputs, agent_actions):
   # At this point, we have unroll length + 1 steps. The last step is only used
   # as bootstrap value, so it's removed.
-  rewards, done, _ = tf.nest.map_structure(lambda t: t[1:], env_outputs)
+  rewards, done, _, _, _ = tf.nest.map_structure(lambda t: t[1:], env_outputs)
   discounts = tf.cast(~done, tf.float32) * FLAGS.discounting
 
   if FLAGS.max_abs_reward:
@@ -352,7 +352,9 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
       tf.TensorSpec([], tf.bool, 'done'),
       tf.nest.map_structure(
           lambda s: tf.TensorSpec(s.shape, s.dtype, 'observation'),
-          env.observation_space.__dict__.get('spaces', env.observation_space))
+          env.observation_space.__dict__.get('spaces', env.observation_space)),
+      tf.TensorSpec([], tf.bool, 'abandoned'),
+      tf.TensorSpec([], tf.int32, 'episode_step'),
   )
   action_specs = tf.TensorSpec(env.action_space.shape,
                                env.action_space.dtype, 'action')
@@ -549,6 +551,10 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     first_agent_states.replace(actors_needing_reset, initial_agent_states)
     agent_states.replace(actors_needing_reset, initial_agent_states)
     actions.reset(actors_needing_reset)
+
+    tf.debugging.assert_non_positive(
+        tf.cast(env_outputs.abandoned, tf.int32),
+        'Abandoned done states are not supported in SAC.')
 
     # Update steps and return.
     actor_infos.add(actor_ids, (0, env_outputs.reward, raw_rewards))

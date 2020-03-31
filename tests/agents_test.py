@@ -53,7 +53,8 @@ def _run_actor(agent):
       shape=(1, 72, 96, 3),
       dtype=tf.uint8,
   )
-  initial_env_output = (tf.constant([2.]), tf.constant([False]), observation)
+  initial_env_output = (tf.constant([2.]), tf.constant([False]), observation,
+                        tf.constant([False]), tf.constant([1], dtype=tf.int32),)
   return agent(tf.zeros([1], dtype=tf.int32), initial_env_output,
                initial_agent_state)
 

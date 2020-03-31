@@ -76,15 +76,19 @@ def actor_loop(create_env_fn):
         reward = 0.0
         raw_reward = 0.0
         done = False
+        abandoned = False
 
         episode_step = 0
         episode_return = 0
         episode_raw_return = 0
 
+        elapsed_inference_s_timer = timer_cls('actor/elapsed_inference_s', 1000)
+
         while True:
           tf.summary.experimental.set_step(actor_step)
-          env_output = utils.EnvOutput(reward, done, observation)
-          with timer_cls('actor/elapsed_inference_s', 1000):
+          env_output = utils.EnvOutput(reward, done, observation,
+                                       abandoned, episode_step)
+          with elapsed_inference_s_timer:
             action = client.inference(
                 FLAGS.task, run_id, env_output, raw_reward)
           with timer_cls('actor/elapsed_env_step_s', 1000):
@@ -95,7 +99,28 @@ def actor_loop(create_env_fn):
           episode_return += reward
           raw_reward = float((info or {}).get('score_reward', reward))
           episode_raw_return += raw_reward
+          # If the info dict contains an entry abandoned=True and the
+          # episode was ended (done=True), then we need to specially handle
+          # the final transition as per the explanations below.
+          abandoned = (info or {}).get('abandoned', False)
+          assert done if abandoned else True
           if done:
+            # If the episode was abandoned, we need to report the final
+            # transition including the final observation as if the episode has
+            # not terminated yet. This way, learning algorithms can use the
+            # transition for learning.
+            if abandoned:
+              # We do not signal yet that the episode was abandoned. This will
+              # happen for the transition from the terminal state to the
+              # resetted state.
+              env_output = utils.EnvOutput(reward, False, observation,
+                                           False, episode_step)
+              with elapsed_inference_s_timer:
+                action = client.inference(
+                    FLAGS.task, run_id, env_output, raw_reward)
+            # Finally, we reset the episode which will report the transition
+            # from the terminal state to the resetted state in the next loop
+            # iteration (with zero rewards).
             logging.info('Return: %f Raw return: %f Steps: %i', episode_return,
                          episode_raw_return, episode_step)
             with timer_cls('actor/elapsed_env_reset_s', 10):
@@ -103,6 +128,8 @@ def actor_loop(create_env_fn):
               episode_step = 0
               episode_return = 0
               episode_raw_return = 0
+              reward = 0.0
+              raw_reward = 0.0
             if is_rendering_enabled():
               env.render()
           actor_step += 1

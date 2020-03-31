@@ -42,7 +42,9 @@ class NetworkTest(tf.test.TestCase):
     env_output = utils.EnvOutput(
         observation=tf.random.normal((n_steps, batch_size, obs_size)),
         reward=tf.random.normal((n_steps, batch_size)),
-        done=tf.cast(tf.random.uniform((n_steps, batch_size), 0, 1), tf.bool))
+        done=tf.cast(tf.random.uniform((n_steps, batch_size), 0, 1), tf.bool),
+        abandoned=tf.zeros((n_steps, batch_size), dtype=tf.bool),
+        episode_step=tf.ones((n_steps, batch_size), dtype=tf.int32))
     prev_action = tf.random.normal((n_steps, batch_size, action_size))
     action = tf.random.normal((n_steps, batch_size, action_size))
     state = agent.initial_state(10)

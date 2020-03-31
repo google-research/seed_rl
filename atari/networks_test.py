@@ -70,7 +70,9 @@ class AgentsTest(tf.test.TestCase):
         utils.EnvOutput(
             reward=tf.random.uniform([unroll_length, batch_size]),
             done=done,
-            observation=self._random_obs(batch_size, unroll_length)))
+            observation=self._random_obs(batch_size, unroll_length),
+            abandoned=tf.zeros_like(done),
+            episode_step=tf.ones([unroll_length, batch_size], dtype=tf.int32)))
 
   def test_basic(self):
     agent = networks.DuelingLSTMDQNNet(2, [OBS_DIM, OBS_DIM, 1], stack_size=4)

@@ -77,7 +77,9 @@ class LearnerTest(tf.test.TestCase):
         done=tf.cast(tf.random.uniform([unroll_length, batch_size],
                                        maxval=2, dtype=tf.int32),
                      tf.bool),
-        observation=self._random_obs(batch_size, unroll_length))
+        observation=self._random_obs(batch_size, unroll_length),
+        abandoned=tf.zeros([unroll_length, batch_size], dtype=tf.bool),
+        episode_step=tf.ones([unroll_length, batch_size], dtype=tf.int32))
 
   def _random_obs(self, batch_size, unroll_length):
     return tf.cast(

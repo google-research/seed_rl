@@ -97,7 +97,7 @@ class GFootball(tf.Module):
     return ()
 
   def _torso(self, unused_prev_action, env_output):
-    _, _, frame = env_output
+    _, _, frame, _, _ = env_output
 
     frame = observation.unpackbits(frame)
     frame /= 255

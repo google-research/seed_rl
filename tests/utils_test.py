@@ -379,7 +379,9 @@ class HindsightExperienceReplayTest(tf.test.TestCase):
                 'desired_goal': y if (y is not None) else x
             },
             done=tf.zeros(x.shape[:-1], tf.bool),
-            reward=tf.zeros(x.shape[:-1], tf.float32)))
+            reward=tf.zeros(x.shape[:-1], tf.float32),
+            abandoned=tf.zeros(x.shape[:-1], tf.bool),
+            episode_step=tf.ones(x.shape[:-1], tf.int32),))
 
   def compute_reward_fn(self, achieved_goal, desired_goal):
     return tf.norm(tf.cast(achieved_goal - desired_goal, tf.float32), axis=-1)

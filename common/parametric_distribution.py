@@ -87,6 +87,15 @@ class ParametricDistribution(abc.ABC):
       entropy = tf.reduce_sum(entropy, axis=-1)
     return entropy
 
+  def kl_divergence(self, parameters_a, parameters_b):
+    """Return KL divergence between the two distributions."""
+    dist_a = self.create_dist(parameters_a)
+    dist_b = self.create_dist(parameters_b)
+    kl = tfd.kl_divergence(dist_a, dist_b)
+    if self._event_ndims == 1:
+      kl = tf.reduce_sum(kl, axis=-1)
+    return kl
+
 
 class CategoricalDistribution(ParametricDistribution):
   """Categorical action distribution."""

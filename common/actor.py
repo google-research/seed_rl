@@ -118,6 +118,8 @@ def actor_loop(create_env_fn):
               with elapsed_inference_s_timer:
                 action = client.inference(
                     FLAGS.task, run_id, env_output, raw_reward)
+              reward = 0.0
+              raw_reward = 0.0
             # Finally, we reset the episode which will report the transition
             # from the terminal state to the resetted state in the next loop
             # iteration (with zero rewards).
@@ -128,8 +130,6 @@ def actor_loop(create_env_fn):
               episode_step = 0
               episode_return = 0
               episode_raw_return = 0
-              reward = 0.0
-              raw_reward = 0.0
             if is_rendering_enabled():
               env.render()
           actor_step += 1

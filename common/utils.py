@@ -532,6 +532,12 @@ class ProgressLogger(object):
     # this is a TF op.
     session.append(value)
 
+  def log_session_from_dict(self, dic):
+    session = self.log_session()
+    for key in dic:
+      self.log(session, key, dic[key])
+    return session
+
   def step_end(self, session, strategy=None, step_increment=1):
     logs = []
     for value in session:

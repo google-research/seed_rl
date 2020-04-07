@@ -64,6 +64,9 @@ class ParametricDistribution(abc.ABC):
   def postprocess(self, event):
     return self._postprocessor.forward(event)
 
+  def inverse_postprocess(self, event):
+    return self._postprocessor.inverse(event)
+
   def sample(self, parameters):
     return self.create_dist(parameters).sample()
 

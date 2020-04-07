@@ -15,7 +15,6 @@
 """Utility functions/classes."""
 
 import collections
-import contextlib
 import threading
 import timeit
 from absl import logging
@@ -859,8 +858,14 @@ def split_structure(structure, prefix_length):
           tf.nest.pack_sequence_as(structure, flattened_suffix))
 
 
-@contextlib.contextmanager
-def nullcontext(*args, **kwds):
-  del args  # unused
-  del kwds  # unused
-  yield None
+class nullcontext(object):  
+
+  def __init__(self, *args, **kwds):
+    del args  # unused
+    del kwds  # unused
+
+  def __enter__(self):
+    return self
+
+  def __exit__(self, exc_type, exc_value, traceback):
+    pass

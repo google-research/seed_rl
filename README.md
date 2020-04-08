@@ -52,11 +52,13 @@ below assume you run the Ubuntu distribution.
   **Manage Docker as a non-root user**.
 
 - Install git:
+
 ```shell
 apt-get install git
 ```
 
 - Clone SEED git repository:
+
 ```shell
 git clone https://github.com/google-research/seed_rl.git
 cd seed_rl

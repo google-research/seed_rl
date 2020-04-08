@@ -242,7 +242,7 @@ def create_dataset(unroll_queue, replay_buffer, strategy, batch_size, encode):
   Returns:
     A "distributed `Dataset`", which acts like a `tf.data.Dataset` except it
     produces "PerReplica" values. Each iteration of the dataset produces
-    flattened `SampledUnrolls` structures where per-timestep tensors have front
+    flattened `Unroll` structures where per-timestep tensors have front
     dimensions [unroll_length, batch_size_per_replica].
   """
 
@@ -254,7 +254,7 @@ def create_dataset(unroll_queue, replay_buffer, strategy, batch_size, encode):
       ctx: tf.distribute.InputContext.
 
     Returns:
-      A flattened `SampledUnrolls` structures where per-timestep tensors have
+      A flattened `Unroll` structures where per-timestep tensors have
       front dimensions [unroll_length, batch_size_per_replica].
     """
     per_replica_batch_size = ctx.get_per_replica_batch_size(batch_size)

@@ -847,10 +847,11 @@ def tpu_decode(ts, structure=None):
   return tf.nest.map_structure(visit, ts, structure or ts)
 
 
-def split_structure(structure, prefix_length):
+def split_structure(structure, prefix_length, axis=0):
   """Splits in two a tf.nest structure of tensors along the first axis."""
   flattened = tf.nest.flatten(structure)
-  split = [tf.split(x, [prefix_length, tf.shape(x)[0] - prefix_length])
+  split = [tf.split(x, [prefix_length, tf.shape(x)[axis] - prefix_length],
+                    axis=axis)
            for x in flattened]
   flattened_prefix = [pair[0] for pair in split]
   flattened_suffix = [pair[1] for pair in split]

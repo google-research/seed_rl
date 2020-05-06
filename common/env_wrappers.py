@@ -36,7 +36,11 @@ class TFAgents2GymWrapper(gym.Env):
     env_output = self.env.step(action)
     reward = env_output.reward
     done = env_output.is_last()
-    return env_output.observation, reward, done, None
+    try:
+      info = self.env.get_info()
+    except NotImplementedError:
+      info = {}
+    return env_output.observation, reward, done, info
 
   def reset(self):
     return self.env.reset().observation

@@ -12,15 +12,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 """Environment wrappers."""
 
 from absl import flags
-
 import gym
 from matplotlib import pyplot as plt
 import numpy as np
 
 FLAGS = flags.FLAGS
+
+
+def spec_to_box(spec):
+  minimum, maximum = -np.inf, np.inf
+  if hasattr(spec, 'minimum'):
+    if not hasattr(spec, 'maximum'):
+      raise ValueError('spec has minimum but no maximum: {}'.format(spec))
+    minimum = np.array(spec.minimum, np.float32)
+    maximum = np.array(spec.maximum, np.float32)
+    return gym.spaces.Box(minimum, maximum)
+
+  return gym.spaces.Box(-np.inf, np.inf, shape=spec.shape)
+
+
+def flatten_and_concatenate_obs(obs_dict):
+  return np.concatenate(
+      [obs.astype(np.float32).flatten() for obs in obs_dict.values()])
 
 
 class TFAgents2GymWrapper(gym.Env):
@@ -53,7 +70,38 @@ class TFAgents2GymWrapper(gym.Env):
     plt.pause(0.001)
 
 
-class UniformBoundActionSpaceWrapper(gym.Env):
+class DmControl2GymWrapper(gym.Env):
+  """Transform DmControl environment into an OpenAI Gym environment."""
+  metadata = {'render.modes': ['rgb_array'], 'video.frames_per_second': 60}
+
+  def __init__(self, env):
+    self.env = env
+    ndim = 0
+    # Count the number of dimensions once the observation will be flatten.
+    for spec in env.observation_spec().values():
+      spec_dim = 1
+      for dim in spec.shape:
+        spec_dim *= dim
+      ndim += spec_dim
+    self.observation_space = gym.spaces.Box(-np.inf, np.inf, shape=(ndim,))
+    self.action_space = spec_to_box(env.action_spec())
+
+  def step(self, action):
+    if not self.action_space.contains(action):
+      raise ValueError('Action out of bound: {}'.format(action))
+    env_output = self.env.step(action)
+    reward = float(env_output.reward)
+    done = env_output.step_type.last()
+    return flatten_and_concatenate_obs(env_output.observation), reward, done, {}
+
+  def reset(self):
+    return flatten_and_concatenate_obs(self.env.reset().observation)
+
+  def render(self, mode='rgb_array'):
+    return self.env.physics.render()
+
+
+class UniformBoundActionSpaceWrapper(gym.Wrapper):
   """Rescale actions so that action space bounds are [-1, 1]."""
 
   def __init__(self, env):
@@ -63,8 +111,7 @@ class UniformBoundActionSpaceWrapper(gym.Env):
       env: Environment to be wrapped. It must have an action space of type
         gym.spaces.Box.
     """
-    self.env = env
-    self.observation_space = env.observation_space
+    super().__init__(env)
     assert isinstance(env.action_space, gym.spaces.Box)
     assert env.action_space.dtype == np.float32
     n_action_dim = env.action_space.shape[0]
@@ -83,12 +130,6 @@ class UniformBoundActionSpaceWrapper(gym.Env):
     assert self.env.action_space.contains(action)
     obs, rew, done, info = self.env.step(action)
     return obs, rew, done, info
-
-  def reset(self):
-    return self.env.reset()
-
-  def render(self, *args, **kwargs):
-    return self.env.render(*args, **kwargs)
 
 
 class DiscretizeEnvWrapper(gym.Env):

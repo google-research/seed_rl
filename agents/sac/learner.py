@@ -47,7 +47,7 @@ import tensorflow as tf
 # Training.
 flags.DEFINE_integer('save_checkpoint_secs', 1800,
                      'Checkpoint save period in seconds.')
-flags.DEFINE_integer('total_environment_frames', int(1000),
+flags.DEFINE_integer('total_environment_frames', int(1e9),
                      'Total environment frames to train for.')
 flags.DEFINE_integer('batch_size', 4, 'Batch size for training.')
 flags.DEFINE_integer('inference_batch_size', 2, 'Batch size for inference.')

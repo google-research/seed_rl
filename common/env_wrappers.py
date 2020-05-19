@@ -62,8 +62,8 @@ class TFAgents2GymWrapper(gym.Env):
   def reset(self):
     return self.env.reset().observation
 
-  def render(self):
-    frame = self.env.render()
+  def render(self, mode='human', **kwargs):
+    frame = self.env.render(mode, **kwargs)
     plt.figure(1)
     plt.clf()
     plt.imshow(frame)

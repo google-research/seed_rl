@@ -15,6 +15,7 @@
 r"""SEED actor."""
 
 import os
+import timeit
 
 from absl import flags
 from absl import logging
@@ -78,12 +79,15 @@ def actor_loop(create_env_fn):
         done = False
         abandoned = False
 
+        global_step = 0
         episode_step = 0
-        episode_return = 0
-        episode_raw_return = 0
+        episode_step_sum = 0
+        episode_return_sum = 0
+        episode_raw_return_sum = 0
+        episodes_in_report = 0
 
         elapsed_inference_s_timer = timer_cls('actor/elapsed_inference_s', 1000)
-
+        last_log_time = timeit.default_timer()
         while True:
           tf.summary.experimental.set_step(actor_step)
           env_output = utils.EnvOutput(reward, done, observation,
@@ -96,9 +100,9 @@ def actor_loop(create_env_fn):
           if is_rendering_enabled():
             env.render()
           episode_step += 1
-          episode_return += reward
+          episode_return_sum += reward
           raw_reward = float((info or {}).get('score_reward', reward))
-          episode_raw_return += raw_reward
+          episode_raw_return_sum += raw_reward
           # If the info dict contains an entry abandoned=True and the
           # episode was ended (done=True), then we need to specially handle
           # the final transition as per the explanations below.
@@ -120,16 +124,30 @@ def actor_loop(create_env_fn):
                     FLAGS.task, run_id, env_output, raw_reward)
               reward = 0.0
               raw_reward = 0.0
+
+            # Periodically log statistics.
+            current_time = timeit.default_timer()
+            episode_step_sum += episode_step
+            global_step += episode_step
+            episodes_in_report += 1
+            if current_time - last_log_time > 1:
+              logging.info(
+                  'Actor steps: %i, Return: %f Raw return: %f Episode steps: %f',
+                  global_step, episode_return_sum / episodes_in_report,
+                  episode_raw_return_sum / episodes_in_report,
+                  episode_step_sum / episodes_in_report)
+              episode_return_sum = 0
+              episode_raw_return_sum = 0
+              episode_step_sum = 0
+              episodes_in_report = 0
+              last_log_time = current_time
+
             # Finally, we reset the episode which will report the transition
             # from the terminal state to the resetted state in the next loop
             # iteration (with zero rewards).
-            logging.info('Return: %f Raw return: %f Steps: %i', episode_return,
-                         episode_raw_return, episode_step)
             with timer_cls('actor/elapsed_env_reset_s', 10):
               observation = env.reset()
               episode_step = 0
-              episode_return = 0
-              episode_raw_return = 0
             if is_rendering_enabled():
               env.render()
           actor_step += 1

@@ -49,8 +49,9 @@ flags.DEFINE_integer('save_checkpoint_secs', 1800,
                      'Checkpoint save period in seconds.')
 flags.DEFINE_integer('total_environment_frames', int(1e9),
                      'Total environment frames to train for.')
-flags.DEFINE_integer('batch_size', 4, 'Batch size for training.')
-flags.DEFINE_integer('inference_batch_size', 2, 'Batch size for inference.')
+flags.DEFINE_integer('batch_size', 256, 'Batch size for training.')
+flags.DEFINE_integer('inference_batch_size', -1,
+                     'Batch size for inference, -1 for auto-tune.')
 flags.DEFINE_integer('unroll_length', 1, 'Unroll length in agent steps.')
 flags.DEFINE_integer('num_training_tpus', 1, 'Number of TPUs for training.')
 flags.DEFINE_string('init_checkpoint', None,
@@ -315,6 +316,8 @@ def validate_config():
      )
   assert get_replay_insertion_batch_size(per_replica=True) >= 1, (
       'Replay ratio is bigger than batch size per replica.')
+  if FLAGS.inference_batch_size == -1:
+    FLAGS.inference_batch_size = max(1, FLAGS.num_actors // 2)
   assert FLAGS.num_actors >= FLAGS.inference_batch_size, (
       'Inference batch size is bigger than the number of actors.')
   if FLAGS.her_window_length:

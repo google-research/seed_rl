@@ -44,13 +44,14 @@ flags.DEFINE_integer('save_checkpoint_secs', 1800,
                      'Checkpoint save period in seconds.')
 flags.DEFINE_integer('total_environment_frames', int(1e9),
                      'Total environment frames to train for.')
-flags.DEFINE_integer('batch_size', 2, 'Batch size for training.')
+flags.DEFINE_integer('batch_size', 64, 'Batch size for training.')
 flags.DEFINE_float('replay_ratio', 1.5,
                    'Average number of times each observation is replayed and '
                    'used for training. '
                    'The default of 1.5 corresponds to an interpretation of the '
                    'R2D2 paper using the end of section 2.3.')
-flags.DEFINE_integer('inference_batch_size', 2, 'Batch size for inference.')
+flags.DEFINE_integer('inference_batch_size', -1,
+                     'Batch size for inference, -1 for auto-tune.')
 flags.DEFINE_integer('unroll_length', 100, 'Unroll length in agent steps.')
 flags.DEFINE_integer('num_training_tpus', 1, 'Number of TPUs for training.')
 flags.DEFINE_integer('update_target_every_n_step',
@@ -468,6 +469,8 @@ def create_dataset(unroll_queue, replay_buffer, strategy, batch_size,
 
 
 def validate_config():
+  if FLAGS.inference_batch_size == -1:
+    FLAGS.inference_batch_size = max(1, FLAGS.num_actors // 2)
   assert FLAGS.num_actors >= FLAGS.inference_batch_size, (
       'Inference batch size is bigger than the number of actors.')
   assert FLAGS.n_steps >= 1, '--n_steps < 1 does not make sense.'

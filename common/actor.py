@@ -46,7 +46,7 @@ def is_rendering_enabled():
 
 def actor_loop(create_env_fn):
   """Main actor loop.
-
+  
   Args:
     create_env_fn: Callable (taking the task ID as argument) that must return a
       newly created environment.
@@ -88,7 +88,7 @@ def actor_loop(create_env_fn):
             action = client.inference(
                 FLAGS.task, run_id, env_output, raw_reward)
           with timer_cls('actor/elapsed_env_step_s', 1000):
-            observation, reward, done, info = env.step(action.numpy()[0])
+            observation, reward, done, info = env.step(action.numpy())
           if is_rendering_enabled():
             env.render()
           episode_step += 1

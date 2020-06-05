@@ -1,0 +1,34 @@
+# Copyright 2019 The SEED Authors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+FROM tensorflow/tensorflow:2.1.0-gpu-py3
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y tmux libsm6 libxext6 libxrender-dev xorg xorg-dev mesa-utils libglvnd-dev libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev wget gdebi
+
+RUN wget http://security.ubuntu.com/ubuntu/pool/main/libx/libxfont/libxfont1_1.5.1-1ubuntu0.16.04.4_amd64.deb &&\
+wget http://security.ubuntu.com/ubuntu/pool/universe/x/xorg-server/xvfb_1.18.4-0ubuntu0.7_amd64.deb &&\
+apt install -y ./libxfont1_1.5.1-1ubuntu0.16.04.4_amd64.deb && \
+apt install -y ./xvfb_1.18.4-0ubuntu0.7_amd64.deb
+
+
+# Install Atari environment
+RUN pip3 install tensorflow_probability==0.9.0 gym_unity opencv-python
+
+# Copy SEED codebase and SEED GRPC binaries.
+ADD . /seed_rl/
+
+WORKDIR /seed_rl
+
+EXPOSE 5004-5050
+
+ENTRYPOINT ["python3", "gcp/run.py"]

@@ -88,7 +88,7 @@ def actor_loop(create_env_fn):
             action = client.inference(
                 FLAGS.task, run_id, env_output, raw_reward)
           with timer_cls('actor/elapsed_env_step_s', 1000):
-            observation, reward, done, info = env.step(action.numpy())
+            observation, reward, done, info = env.step(action.numpy()[0])
           if is_rendering_enabled():
             env.render()
           episode_step += 1

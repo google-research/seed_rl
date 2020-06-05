@@ -19,7 +19,7 @@ die () {
     exit 1
 }
 
-ENVIRONMENTS="atari|dmlab|football"
+ENVIRONMENTS="atari|dmlab|football|unity"
 AGENTS="r2d2|vtrace"
 [ "$#" -ne 0 ] || die "Usage: run_local.sh [$ENVIRONMENTS] [$AGENTS] [Num. actors]"
 echo $1 | grep -E -q $ENVIRONMENTS || die "Supported games: $ENVIRONMENTS"
@@ -35,7 +35,7 @@ cd $DIR
 docker/build.sh
 docker_version=$(docker version --format '{{.Server.Version}}')
 if [[ "19.03" > $docker_version ]]; then
-  docker run --entrypoint ./docker/run.sh -ti -it --name seed --rm seed_rl:$ENVIRONMENT $ENVIRONMENT $AGENT $NUM_ACTORS
+  docker run --entrypoint ./docker/run.sh -ti -it -p 5005:5005 -p 6006:6006 --name seed --rm seed_rl:$ENVIRONMENT $ENVIRONMENT $AGENT $NUM_ACTORS
 else
-  docker run --gpus all --entrypoint ./docker/run.sh -ti -it -e HOST_PERMS="$(id -u):$(id -g)" --name seed --rm seed_rl:$ENVIRONMENT $ENVIRONMENT $AGENT $NUM_ACTORS
+  docker run --gpus all --entrypoint ./docker/run.sh -ti -it -p 5005:5005 -p 6006:6006 -e HOST_PERMS="$(id -u):$(id -g)" --name seed --rm seed_rl:$ENVIRONMENT $ENVIRONMENT $AGENT $NUM_ACTORS
 fi

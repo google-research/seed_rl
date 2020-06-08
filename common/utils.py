@@ -499,6 +499,7 @@ class ProgressLogger(object):
     self.max_period = max_period
     # Array of strings with names of values to be logged.
     self.log_keys = []
+    self.log_keys_set = set()
     self.step_cnt = tf.Variable(-1, dtype=tf.int64)
     self.ready_values = tf.Variable([-1.0],
                                     dtype=tf.float32,
@@ -527,7 +528,9 @@ class ProgressLogger(object):
 
   def log(self, session, name, value):
     # this is a python op so it happens only when this tf.function is compiled
-    self.log_keys.append(name)
+    if name not in self.log_keys_set:
+      self.log_keys.append(name)
+      self.log_keys_set.add(name)
     # this is a TF op.
     session.append(value)
 

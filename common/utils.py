@@ -574,10 +574,12 @@ class ProgressLogger(object):
     self.last_log_time, self.last_log_step = logging_time, step_cnt
 
   def _logging_loop(self):
+    last_log_try = timeit.default_timer()
     while not self.terminator.isSet():
-      last_log_time = self.last_log_time
       self._log()
-      elapsed = timeit.default_timer() - last_log_time
+      now = timeit.default_timer()
+      elapsed = now - last_log_try
+      last_log_try = now
       self.period = min(self.period_factor * self.period,
                         self.max_period)
       self.terminator.wait(timeout=max(0, self.period - elapsed))

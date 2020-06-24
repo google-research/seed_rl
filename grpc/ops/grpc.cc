@@ -781,9 +781,9 @@ class BatchedFn : public FnType {
   // HACK: A shared_ptr to make type copyable for std::function.
   thread::ThreadPool* tp_;
   std::shared_ptr<mutex> mu_;
-  int64 next_index_ GUARDED_BY(mu_) = 0;
-  std::vector<Computation*> empty_computations_ GUARDED_BY(mu_);
-  Computation* current_computation_ GUARDED_BY(mu_) = nullptr;
+  int64 next_index_ ABSL_GUARDED_BY(mu_) = 0;
+  std::vector<Computation*> empty_computations_ ABSL_GUARDED_BY(mu_);
+  Computation* current_computation_ ABSL_GUARDED_BY(mu_) = nullptr;
 };
 
 class GrpcServerBindOp : public OpKernel {
@@ -1015,7 +1015,7 @@ class GrpcClientResource : public ResourceBase {
  private:
   std::unique_ptr<seed_rl::TensorService::Stub> stub_;
   grpc::ClientContext ctx_;
-  std::unique_ptr<ReaderWriter> stream_ GUARDED_BY(call_mu_);
+  std::unique_ptr<ReaderWriter> stream_ ABSL_GUARDED_BY(call_mu_);
   mutex call_mu_;
 };
 

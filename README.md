@@ -39,6 +39,11 @@ Please cite the paper if you use the code from this repository in your work.
 }
 ```
 
+## Pull Requests
+
+At this time, we do not accept pull requests. We are happy to link to forks
+that add interesting functionality.
+
 ## Prerequisites
 
 There are a few steps you need to take before playing with SEED. Instructions

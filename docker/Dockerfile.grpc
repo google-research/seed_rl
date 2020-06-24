@@ -11,12 +11,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM tensorflow/tensorflow:2.1.0-custom-op-gpu-ubuntu16 as grpc_compile
+FROM tensorflow/tensorflow:2.2.0-custom-op-gpu-ubuntu16 as grpc_compile
 
 RUN git clone https://github.com/tensorflow/custom-op.git
 WORKDIR custom-op
 
-RUN pip install --pre tensorflow-gpu
 RUN ./configure.sh
 
 RUN echo '\n\
@@ -42,5 +41,5 @@ ADD . /seed_rl
 RUN cp bazel-bin/grpc/ops/grpc.so /seed_rl/grpc/grpc_cc.so
 RUN cp bazel-bin/grpc/service_pb2.py /seed_rl/grpc/service_pb2.py
 WORKDIR /seed_rl/
-RUN pip3 install tensorflow-gpu==2.1.0
+RUN pip3 install tensorflow-gpu==2.2.0
 RUN PYTHONPATH=/ python3 grpc/python/ops_test.py

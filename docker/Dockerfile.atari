@@ -11,7 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM tensorflow/tensorflow:2.1.0-gpu-py3
+FROM tensorflow/tensorflow:2.2.0-gpu
 
 RUN apt-get update && apt-get install -y tmux libsm6 libxext6 libxrender-dev
 

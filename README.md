@@ -5,11 +5,13 @@ agent where both training and inference are performed on the learner.
 
 <img src="./docs/architecture.gif" alt="Architecture" width="50%" height="50%">
 
-Two agents are implemented:
+Three agents are implemented:
 
 - [IMPALA: Scalable Distributed Deep-RL with Importance Weighted Actor-Learner Architectures](https://arxiv.org/abs/1802.01561)
 
 - [R2D2 (Recurrent Experience Replay in Distributed Reinforcement Learning)](https://openreview.net/forum?id=r1lyTjAqYX)
+
+- [SAC: Soft Actor-Critic](https://arxiv.org/abs/1801.01290)
 
 The code is already interfaced with the following environments:
 

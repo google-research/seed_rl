@@ -13,8 +13,7 @@
 # limitations under the License.
 
 
-"""VTrace (IMPALA) learner for Google Research Football.
-"""
+"""V-trace (IMPALA) learner for Google Research Football."""
 
 from absl import app
 from absl import flags

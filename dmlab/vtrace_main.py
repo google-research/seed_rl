@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-"""VTrace (IMPALA) binary for DeepMind Lab.
+"""V-trace (IMPALA) binary for DeepMind Lab.
 
 Actor and learner are in the same binary so that all flags are shared.
 """

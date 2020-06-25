@@ -20,7 +20,7 @@ die () {
 }
 
 ENVIRONMENTS="atari|dmlab|football"
-AGENTS="r2d2|vtrace"
+AGENTS="r2d2|vtrace|sac"
 [ "$#" -ne 0 ] || die "Usage: run_local.sh [$ENVIRONMENTS] [$AGENTS] [Num. actors]"
 echo $1 | grep -E -q $ENVIRONMENTS || die "Supported games: $ENVIRONMENTS"
 echo $2 | grep -E -q $AGENTS || die "Supported agents: $AGENTS"

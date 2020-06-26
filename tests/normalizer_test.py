@@ -54,7 +54,7 @@ class NormalizerTest(tf.test.TestCase):
       norm.update(data, only_accumulate=True)
 
     for _ in range(5):
-      training_strategy.experimental_run_v2(training_step)
+      training_strategy.run(training_step)
       norm.finish_update()
 
     normalized = norm(data)

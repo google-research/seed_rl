@@ -272,14 +272,13 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
         t.assign(g)
       return loss, logs
 
-    loss, logs = training_strategy.experimental_run_v2(compute_gradients,
-                                                       (data,))
+    loss, logs = training_strategy.run(compute_gradients, (data,))
     loss = training_strategy.experimental_local_results(loss)[0]
 
     def apply_gradients(_):
       optimizer.apply_gradients(zip(temp_grads, agent.trainable_variables))
 
-    strategy.experimental_run_v2(apply_gradients, (loss,))
+    strategy.run(apply_gradients, (loss,))
 
     getattr(agent, 'end_of_training_step_callback',
             lambda: logging.info('end_of_training_step_callback not found'))()

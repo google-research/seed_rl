@@ -100,7 +100,7 @@ class Normalizer(tf.Module):
 
     You only need to call this method manually if `update` was called with
     `only_accumulate=True` (usually on a TPU). This method needs to be called
-    in cross-replica context (i.e. not inside experimental_run_v2).
+    in cross-replica context (i.e. not inside Strategy.run).
     """
     # sum the accumulators accross all replicas
     step_increment, sum_increment, sumsq_increment = (

@@ -517,7 +517,7 @@ class TPUEncodeTest(tf.test.TestCase, parameterized.TestCase):
         dataset_fn)
     encoded = next(iter(dataset))
 
-    decoded = strategy.experimental_run_v2(
+    decoded = strategy.run(
         tf.function(lambda args: utils.tpu_decode(args, encoded)), (encoded,))
     decoded = tf.nest.map_structure(
         lambda t: strategy.experimental_local_results(t)[0], decoded)
@@ -595,7 +595,7 @@ class MinimizeTest(tf.test.TestCase, parameterized.TestCase):
       temp_grad.assign(g)
       return loss
 
-    loss = training_strategy.experimental_run_v2(compute_gradients, ())
+    loss = training_strategy.run(compute_gradients, ())
     loss = training_strategy.experimental_local_results(loss)[0]
 
     optimizer = tf.keras.optimizers.SGD(.1)
@@ -603,7 +603,7 @@ class MinimizeTest(tf.test.TestCase, parameterized.TestCase):
     def apply_gradients(_):
       optimizer.apply_gradients([(temp_grad, a)])
 
-    strategy.experimental_run_v2(apply_gradients, (loss,))
+    strategy.run(apply_gradients, (loss,))
 
     a_values = [v.read_value() for v in strategy.experimental_local_results(a)]
 

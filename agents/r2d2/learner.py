@@ -617,7 +617,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
       return loss, priorities, args.indices, gradient_norm_before_clip
 
     loss, priorities, indices, gradient_norm_before_clip = (
-        training_strategy.experimental_run_v2(compute_gradients, (data,)))
+        training_strategy.run(compute_gradients, (data,)))
     loss = training_strategy.experimental_local_results(loss)[0]
 
     def apply_gradients(loss):
@@ -625,7 +625,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
       return loss
 
 
-    loss = strategy.experimental_run_v2(apply_gradients, (loss,))
+    loss = strategy.run(apply_gradients, (loss,))
 
     # convert PerReplica to a Tensor
     if not isinstance(priorities, tf.Tensor):

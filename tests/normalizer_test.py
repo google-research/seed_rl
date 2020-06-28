@@ -37,11 +37,15 @@ class NormalizerTest(tf.test.TestCase):
   def test_normalizer_many_replicas(self):
     resolver = tf.distribute.cluster_resolver.TPUClusterResolver('')
     strategy = tf.distribute.experimental.TPUStrategy(resolver)
+
+    strategy._enable_packed_variable_in_eager_mode = False  
     topology = tf.tpu.experimental.initialize_tpu_system(resolver)
     training_da = tf.tpu.experimental.DeviceAssignment.build(
         topology, num_replicas=1)
     training_strategy = tf.distribute.experimental.TPUStrategy(
         resolver, device_assignment=training_da)
+
+    training_strategy._enable_packed_variable_in_eager_mode = False  
 
     data = tf.random.uniform((100, 32))
 

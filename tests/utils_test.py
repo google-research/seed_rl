@@ -505,6 +505,8 @@ class TPUEncodeTest(tf.test.TestCase, parameterized.TestCase):
     strategy = tf.distribute.experimental.TPUStrategy(
         resolver, device_assignment=da)
 
+    strategy._enable_packed_variable_in_eager_mode = False  
+
     def dataset_fn(unused_ctx):
       def gen():
         yield 0
@@ -573,11 +575,15 @@ class MinimizeTest(tf.test.TestCase, parameterized.TestCase):
   def test_minimize(self, num_training_tpus):
     resolver = tf.distribute.cluster_resolver.TPUClusterResolver('')
     strategy = tf.distribute.experimental.TPUStrategy(resolver)
+
+    strategy._enable_packed_variable_in_eager_mode = False  
     topology = tf.tpu.experimental.initialize_tpu_system(resolver)
     training_da = tf.tpu.experimental.DeviceAssignment.build(
         topology, num_replicas=num_training_tpus)
     training_strategy = tf.distribute.experimental.TPUStrategy(
         resolver, device_assignment=training_da)
+
+    training_strategy._enable_packed_variable_in_eager_mode = False  
 
     with strategy.scope():
       a = tf.Variable(1., trainable=True)

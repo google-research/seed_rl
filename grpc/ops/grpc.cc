@@ -866,17 +866,27 @@ class GrpcServerBindOp : public OpKernel {
     Device* cpu_device;
     OP_REQUIRES_OK(ctx, lib->device_mgr()->LookupDevice("CPU:0", &cpu_device));
     int num_args = fdef->signature().input_arg_size();
-    for (int i = 0; i < num_args - static_cast<int>(captures.size()); ++i) {
+    const int num_non_captured_inputs =
+        num_args - static_cast<int>(captures.size());
+    for (int i = 0; i < num_non_captured_inputs; ++i) {
       i_opts.input_devices.push_back(cpu_device->name());
     }
-    for (auto& captured : captures) {
+    // Maps from a CompositeDevice name to underlying physical device names.
+    absl::flat_hash_map<string, std::vector<string>> composite_devices;
+    for (int i = 0; i < captures.size(); ++i) {
+      const auto& captured = captures[i];
       if (captured.dtype() == DT_RESOURCE) {
-        const ResourceHandle& handle = captured.flat<ResourceHandle>()(0);
-        i_opts.input_devices.push_back(handle.device());
+        i_opts.input_devices.push_back(GetFunctionResourceInputDevice(
+            captured, num_non_captured_inputs + i, *fdef, &composite_devices));
       } else {
         i_opts.input_devices.push_back(cpu_device->name());
       }
     }
+
+    for (const auto& it : composite_devices) {
+      i_opts.composite_devices[it.first] = &it.second;
+    }
+
     // Make sure the outputs are on CPU so they can be copied.
     for (int i = 0; i < fdef->signature().output_arg_size(); ++i) {
       i_opts.output_devices.push_back(cpu_device->name());

@@ -41,10 +41,6 @@ def are_summaries_enabled():
   return FLAGS.task < FLAGS.num_actors_with_summaries
 
 
-def is_rendering_enabled():
-  return FLAGS.render and FLAGS.task == 0
-
-
 def actor_loop(create_env_fn):
   """Main actor loop.
 
@@ -53,6 +49,7 @@ def actor_loop(create_env_fn):
       newly created environment.
   """
   logging.info('Starting actor loop')
+  is_rendering_enabled = FLAGS.render and FLAGS.task == 0
   if are_summaries_enabled():
     summary_writer = tf.summary.create_file_writer(
         os.path.join(FLAGS.logdir, 'actor_{}'.format(FLAGS.task)),
@@ -97,7 +94,7 @@ def actor_loop(create_env_fn):
                 FLAGS.task, run_id, env_output, raw_reward)
           with timer_cls('actor/elapsed_env_step_s', 1000):
             observation, reward, done, info = env.step(action.numpy())
-          if is_rendering_enabled():
+          if is_rendering_enabled:
             env.render()
           episode_step += 1
           episode_return_sum += reward
@@ -148,7 +145,7 @@ def actor_loop(create_env_fn):
             with timer_cls('actor/elapsed_env_reset_s', 10):
               observation = env.reset()
               episode_step = 0
-            if is_rendering_enabled():
+            if is_rendering_enabled:
               env.render()
           actor_step += 1
       except (tf.errors.UnavailableError, tf.errors.CancelledError) as e:

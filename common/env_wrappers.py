@@ -115,9 +115,8 @@ class UniformBoundActionSpaceWrapper(gym.Wrapper):
     assert isinstance(env.action_space, gym.spaces.Box)
     assert env.action_space.dtype == np.float32
     n_action_dim = env.action_space.shape[0]
-    self.low = env.action_space.low
-    self.high = env.action_space.high
-    self.center = (self.low + self.high) / 2.
+    self.half_range = (env.action_space.high - env.action_space.low) / 2.
+    self.center = env.action_space.low + self.half_range
     self.action_space = gym.spaces.Box(low=-np.ones(n_action_dim),
                                        high=np.ones(n_action_dim),
                                        dtype=np.float32)
@@ -125,11 +124,8 @@ class UniformBoundActionSpaceWrapper(gym.Wrapper):
   def step(self, action):
     assert np.abs(action).max() < 1.00001, 'Action: %s' % action
     action = np.clip(action, -1, 1)
-    assert self.action_space.contains(action)
-    action = self.center + action * (self.high - self.center)
-    assert self.env.action_space.contains(action)
-    obs, rew, done, info = self.env.step(action)
-    return obs, rew, done, info
+    action = self.center + action * self.half_range
+    return self.env.step(action)
 
 
 class DiscretizeEnvWrapper(gym.Env):

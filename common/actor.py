@@ -85,6 +85,7 @@ def actor_loop(create_env_fn):
 
         elapsed_inference_s_timer = timer_cls('actor/elapsed_inference_s', 1000)
         last_log_time = timeit.default_timer()
+        last_global_step = 0
         while True:
           tf.summary.experimental.set_step(actor_step)
           env_output = utils.EnvOutput(reward, done, observation,
@@ -129,10 +130,13 @@ def actor_loop(create_env_fn):
             episodes_in_report += 1
             if current_time - last_log_time > 1:
               logging.info(
-                  'Actor steps: %i, Return: %f Raw return: %f Episode steps: %f',
+                  'Actor steps: %i, Return: %f Raw return: %f Episode steps: %f, Speed: %f steps/s',
                   global_step, episode_return_sum / episodes_in_report,
                   episode_raw_return_sum / episodes_in_report,
-                  episode_step_sum / episodes_in_report)
+                  episode_step_sum / episodes_in_report,
+                  (global_step - last_global_step) /
+                  (current_time - last_log_time))
+              last_global_step = global_step
               episode_return_sum = 0
               episode_raw_return_sum = 0
               episode_step_sum = 0

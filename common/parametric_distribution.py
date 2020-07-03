@@ -29,7 +29,12 @@ FLAGS = flags.FLAGS
 class ParametricDistribution(abc.ABC):
   """Abstract class for parametric (action) distribution."""
 
-  def __init__(self, param_size, postprocessor, event_ndims, reparametrizable):
+  def __init__(self,
+               param_size,
+               postprocessor,
+               event_ndims,
+               reparametrizable,
+               jacobian_event_ndims=0):
     """Abstract class for parametric (action) distribution.
 
     Specifies how to transform distribution parameters (i.e. actor output)
@@ -41,10 +46,12 @@ class ParametricDistribution(abc.ABC):
       (in practice, it's tanh or identity)
       event_ndims: rank of the distribution sample (i.e. action)
       reparametrizable: is the distribution reparametrizable
+      jacobian_event_ndims: rank of the action for the jacobian computation.
     """
     self._param_size = param_size
     self._postprocessor = postprocessor  # tfp.bijector
     self._event_ndims = event_ndims  # rank of events
+    self._jacobian_event_ndims = jacobian_event_ndims
     self._reparametrizable = reparametrizable
     assert event_ndims in [0, 1]
 
@@ -71,11 +78,19 @@ class ParametricDistribution(abc.ABC):
     return self.create_dist(parameters).sample()
 
   def log_prob(self, parameters, actions):
-    """Compute the log probability of actions."""
+    """Compute the log probability of the actions.
+
+    Args:
+      parameters: Tensor of parameters for the probability function.
+      actions: Tensor of actions before postprocessing.
+    Returns:
+      Tensor of log probabilities, or logs of the density function if the
+        actions are continuous.
+    """
     dist = self.create_dist(parameters)
     log_probs = dist.log_prob(actions)
     log_probs -= self._postprocessor.forward_log_det_jacobian(
-        tf.cast(actions, tf.float32), event_ndims=0)
+        tf.cast(actions, tf.float32), event_ndims=self._jacobian_event_ndims)
     if self._event_ndims == 1:
       log_probs = tf.reduce_sum(log_probs, axis=-1)  # sum over action dimension
     return log_probs
@@ -85,7 +100,8 @@ class ParametricDistribution(abc.ABC):
     dist = self.create_dist(parameters)
     entropy = dist.entropy()
     entropy += self._postprocessor.forward_log_det_jacobian(
-        tf.cast(dist.sample(), tf.float32), event_ndims=0)
+        tf.cast(dist.sample(), tf.float32),
+        event_ndims=self._jacobian_event_ndims)
     if self._event_ndims == 1:
       entropy = tf.reduce_sum(entropy, axis=-1)
     return entropy
@@ -175,6 +191,84 @@ class NormalTanhDistribution(ParametricDistribution):
     return dist
 
 
+class JointDistribution(ParametricDistribution):
+  """Distribution which mixes NormalTanh and Multicategorical."""
+
+  def __init__(self,
+               continuous_event_size,
+               n_discrete_dimensions,
+               n_discrete_actions_per_dim,
+               discrete_dtype,
+               min_std=0.001):
+    """Initialize the distribution.
+
+    Args:
+      continuous_event_size: the size of continuous events (i.e. actions).
+      n_discrete_dimensions: the dimensionality of discrete actions.
+      n_discrete_actions_per_dim: number of discrete actions available per
+        dimension.
+      discrete_dtype: dtype of discrete actions, usually int32 or int64.
+      min_std: minimum std for the gaussian.
+    """
+    super().__init__(
+        param_size=2 * continuous_event_size +
+        n_discrete_dimensions * n_discrete_actions_per_dim,
+        postprocessor=tfb.Blockwise(
+            [tfb.Tanh(), tfb.Identity()],
+            block_sizes=[continuous_event_size, n_discrete_dimensions]),
+        event_ndims=0,
+        reparametrizable=True,
+        # We need to set the jacobian_event_ndims to 1 for the Blockwise
+        # post-processor to split the last dimension.
+        jacobian_event_ndims=1)
+    self._continuous_event_size = continuous_event_size
+    self._n_discrete_dimensions = n_discrete_dimensions
+    self._n_discrete_actions_per_dim = n_discrete_actions_per_dim
+    self._discrete_dtype = discrete_dtype
+    self._min_std = min_std
+
+  def create_dist(self, parameters):
+    continuous_params, discrete_params = tf.split(
+        parameters, [
+            2 * self._continuous_event_size,
+            self._n_discrete_dimensions * self._n_discrete_actions_per_dim
+        ],
+        axis=-1)
+
+    loc, scale = tf.split(continuous_params, 2, axis=-1)
+    scale = tf.math.softplus(scale) + self._min_std
+    continuous_dist = tfd.Normal(loc=loc, scale=scale)
+    continuous_dist = tfd.Independent(continuous_dist, 1)
+
+    batch_shape = discrete_params.shape[:-1]
+    discrete_logits_shape = [
+        self._n_discrete_dimensions, self._n_discrete_actions_per_dim
+    ]
+    discrete_logits = tf.reshape(discrete_params,
+                                 batch_shape + discrete_logits_shape)
+    discrete_dist = tfd.Categorical(
+        logits=discrete_logits, dtype=self._discrete_dtype)
+    discrete_dist = tfd.Independent(discrete_dist, 1)
+
+    return tfd.Blockwise([continuous_dist, discrete_dist],
+                         dtype_override=tf.float32)
+
+
+def check_multi_discrete_space(space):
+  if min(space.nvec) != max(space.nvec):
+    raise ValueError('space nvec must be constant: {}'.format(space.nvec))
+
+
+def check_box_space(space):
+  assert len(space.shape) == 1, space.shape
+  if any(l != -1 for l in space.low):
+    raise ValueError(
+        f'Learner only supports actions bounded to [-1,1]: {space.low}')
+  if any(h != 1 for h in space.high):
+    raise ValueError(
+        f'Learner only supports actions bounded to [-1,1]: {space.high}')
+
+
 def get_parametric_distribution_for_action_space(action_space):
   """Returns an action distribution parametrization based on the action space.
 
@@ -185,19 +279,28 @@ def get_parametric_distribution_for_action_space(action_space):
     return CategoricalDistribution(action_space.n,
                                    dtype=action_space.dtype)
   elif isinstance(action_space, gym.spaces.MultiDiscrete):
-    assert min(action_space.nvec) == max(action_space.nvec)
+    check_multi_discrete_space(action_space)
     return MultiCategoricalDistribution(
         n_dimensions=len(action_space.nvec),
         n_actions_per_dim=action_space.nvec[0],
         dtype=action_space.dtype)
   elif isinstance(action_space, gym.spaces.Box):  # continuous actions
-    assert len(action_space.shape) == 1
-    # learner only supports actions bounded to [-1,1]
-    assert min(action_space.low) == -1
-    assert max(action_space.low) == -1
-    assert min(action_space.high) == 1
-    assert max(action_space.high) == 1
+    check_box_space(action_space)
     return NormalTanhDistribution(
         event_size=action_space.shape[0])
+  elif isinstance(action_space, gym.spaces.Tuple):  # mixed actions
+    assert len(action_space) == 2, action_space
+
+    continuous_space, discrete_space = action_space
+    assert isinstance(continuous_space, gym.spaces.Box), continuous_space
+    check_box_space(continuous_space)
+    assert isinstance(discrete_space, gym.spaces.MultiDiscrete), discrete_space
+    check_multi_discrete_space(discrete_space)
+
+    return JointDistribution(
+        continuous_event_size=continuous_space.shape[0],
+        n_discrete_dimensions=len(discrete_space.nvec),
+        n_discrete_actions_per_dim=discrete_space.nvec[0],
+        discrete_dtype=discrete_space.dtype)
   else:
     assert False, 'Unsupported action space'

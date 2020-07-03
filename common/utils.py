@@ -18,6 +18,7 @@ import collections
 import threading
 import timeit
 from absl import logging
+import gym
 
 import numpy as np
 import tensorflow as tf
@@ -875,3 +876,20 @@ class nullcontext(object):
 
   def __exit__(self, exc_type, exc_value, traceback):
     pass
+
+
+def tensor_spec_from_gym_space(space, name):
+  """Get a TensorSpec from a gym spec."""
+  if space.shape is not None:
+    return tf.TensorSpec(space.shape, space.dtype, name)
+  if not isinstance(space, gym.spaces.Tuple):
+    raise ValueError(
+        'Space \'{}\' is not a tuple: unknown shape.'.format(space))
+  num_elements = 0
+  for s in space:
+    if len(s.shape) != 1:
+      raise ValueError(
+          'Only 1 dimension subspaces are handled for tuple spaces: {}'.format(
+              space))
+    num_elements += s.shape[0]
+  return tf.TensorSpec((num_elements,), tf.float32, name)

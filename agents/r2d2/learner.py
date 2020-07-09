@@ -700,7 +700,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   def add_batch_size(ts):
     return tf.TensorSpec([FLAGS.inference_batch_size] + list(ts.shape),
                          ts.dtype, ts.name)
-  inference_iteration = tf.Variable(-1)
+  inference_iteration = tf.Variable(-1, dtype=tf.int64)
   inference_specs = (
       tf.TensorSpec([], tf.int32, 'actor_id'),
       tf.TensorSpec([], tf.int64, 'run_id'),
@@ -776,7 +776,8 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
       return device_specific_inference_fn
 
     # Distribute the inference calls among the inference cores.
-    branch_index = inference_iteration.assign_add(1) % len(inference_devices)
+    branch_index = tf.cast(
+        inference_iteration.assign_add(1) % len(inference_devices), tf.int32)
     agent_outputs, curr_agent_states = tf.switch_case(branch_index, {
         i: make_inference_fn(inference_device)
         for i, inference_device in enumerate(inference_devices)

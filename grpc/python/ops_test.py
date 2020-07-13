@@ -19,11 +19,11 @@ from __future__ import division
 from __future__ import print_function
 
 import collections
+from concurrent import futures
 import threading
 import time
 import uuid
 from absl.testing import parameterized
-from concurrent import futures
 from seed_rl.grpc.python import ops
 
 from six.moves import range
@@ -269,20 +269,20 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     server.shutdown()
 
   def test_client_non_scalar_server_address(self):
-    with self.assertRaisesRegexp(tf.errors.InvalidArgumentError,
-                                 'server_address must be a scalar'):
+    with self.assertRaisesRegex(tf.errors.InvalidArgumentError,
+                                'server_address must be a scalar'):
       ops.Client(['localhost:8000', 'localhost:8001'])
 
   def test_server_non_vector_server_addresses(self):
-    with self.assertRaisesRegexp(tf.errors.InvalidArgumentError,
-                                 'server_addresses must be a vector'):
+    with self.assertRaisesRegex(tf.errors.InvalidArgumentError,
+                                'server_addresses must be a vector'):
       ops.Server([['localhost:8000', 'localhost:8001']])
 
   def test_not_bound(self):
     address = self.get_unix_address()
     server = ops.Server([address])
-    with self.assertRaisesRegexp(tf.errors.UnavailableError,
-                                 'No function was bound'):
+    with self.assertRaisesRegex(tf.errors.UnavailableError,
+                                'No function was bound'):
       server.start()
 
   def test_binding_function_twice(self):
@@ -294,8 +294,8 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       return 42
 
     server.bind(foo)
-    with self.assertRaisesRegexp(tf.errors.InvalidArgumentError,
-                                 'Function \'foo\' was bound twice.'):
+    with self.assertRaisesRegex(tf.errors.InvalidArgumentError,
+                                'Function \'foo\' was bound twice.'):
       server.bind(foo)
 
   def test_starting_twice(self):
@@ -309,8 +309,8 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     server.bind(foo)
 
     server.start()
-    with self.assertRaisesRegexp(tf.errors.InvalidArgumentError,
-                                 'Server is already started'):
+    with self.assertRaisesRegex(tf.errors.InvalidArgumentError,
+                                'Server is already started'):
       server.start()
 
   @parameterized.parameters(([], False), ([1], True))
@@ -326,8 +326,8 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     server.start()
 
     client = ops.Client(address)
-    with self.assertRaisesRegexp(tf.errors.InvalidArgumentError,
-                                 'Expects 1 arguments, but 2 is provided'):
+    with self.assertRaisesRegex(tf.errors.InvalidArgumentError,
+                                'Expects 1 arguments, but 2 is provided'):
       client.foo([42, 43])
     server.shutdown()
 
@@ -344,7 +344,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     server.start()
 
     client = ops.Client(address)
-    with self.assertRaisesRegexp(
+    with self.assertRaisesRegex(
         tf.errors.InvalidArgumentError,
         r'Expects arg\[0\] to be int32 but string is provided'):
       client.foo('foo')
@@ -364,8 +364,8 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     server.start()
 
     client = ops.Client(address)
-    with self.assertRaisesRegexp(tf.errors.InvalidArgumentError,
-                                 'assertion failed'):
+    with self.assertRaisesRegex(tf.errors.InvalidArgumentError,
+                                'assertion failed'):
       client.foo(42)
     server.shutdown()
 
@@ -412,7 +412,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
 
     client = ops.Client(address)
     server.shutdown()
-    with self.assertRaisesRegexp(tf.errors.UnavailableError, 'server closed'):
+    with self.assertRaisesRegex(tf.errors.UnavailableError, 'server closed'):
       client.foo(42)
 
   @parameterized.parameters(([], False), ([1], True))
@@ -436,7 +436,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       f = executor.submit(client.foo, 42)
       is_waiting.wait()
       server.shutdown()
-      with self.assertRaisesRegexp(tf.errors.UnavailableError, 'server closed'):
+      with self.assertRaisesRegex(tf.errors.UnavailableError, 'server closed'):
         f.result()
 
   @parameterized.parameters(([], False), ([1], True))
@@ -533,7 +533,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     def foo(x, y):
       return x, y
 
-    with self.assertRaisesRegexp(
+    with self.assertRaisesRegex(
         tf.errors.InvalidArgumentError,
         'All inputs must have the same first dimension when batched=True'):
       server.bind(foo, batched=True)
@@ -549,7 +549,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     def foo(x, y):
       return x, y
 
-    with self.assertRaisesRegexp(
+    with self.assertRaisesRegex(
         tf.errors.InvalidArgumentError,
         'All inputs must at least be rank 1 when batched=True'):
       server.bind(foo, batched=True)
@@ -565,7 +565,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     def foo(unused_x, unused_y):
       return 1
 
-    with self.assertRaisesRegexp(
+    with self.assertRaisesRegex(
         tf.errors.InvalidArgumentError,
         'All outputs must at least be rank 1 when batched=True'):
       server.bind(foo, batched=True)
@@ -578,7 +578,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     def foo():
       return 1
 
-    with self.assertRaisesRegexp(
+    with self.assertRaisesRegex(
         tf.errors.InvalidArgumentError,
         'Function must have at least one input when batched=True'):
       server.bind(foo, batched=True)
@@ -591,7 +591,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     def foo(unused_x):
       return tf.zeros([3])
 
-    with self.assertRaisesRegexp(
+    with self.assertRaisesRegex(
         tf.errors.InvalidArgumentError,
         'All outputs must have the same batch size as the inputs.'):
       server.bind(foo, batched=True)
@@ -612,7 +612,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       f = executor.submit(client.foo, 42)
       time.sleep(1)
       server.shutdown()
-      with self.assertRaisesRegexp(tf.errors.UnavailableError, 'server closed'):
+      with self.assertRaisesRegex(tf.errors.UnavailableError, 'server closed'):
         f.result()
 
   @parameterized.parameters(([], False), ([1], True), ([2], True))
@@ -656,12 +656,12 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     client = ops.Client(address)
     self.assertAllEqual(0, client.foo(42))
 
-    with self.assertRaisesRegexp(
+    with self.assertRaisesRegex(
         tf.errors.InvalidArgumentError,
         'Output must be at least rank 1 when batched=True'):
       client.foo(0)
 
-    with self.assertRaisesRegexp(
+    with self.assertRaisesRegex(
         tf.errors.InvalidArgumentError,
         'All outputs must have the same batch size as '
         'the inputs when batched=True, expected: 1 was: 2'):
@@ -699,7 +699,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     server.start()
 
     client = ops.Client(address)
-    with self.assertRaisesRegexp(
+    with self.assertRaisesRegex(
         tf.errors.InvalidArgumentError,
         r'Expects arg\[0\] to have shape \[4,3\] but had shape \[3,4\]'):
       client.foo(tf.zeros([3, 4], tf.int32))  # Shape [3, 4], not [4, 3]

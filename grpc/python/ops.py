@@ -65,8 +65,11 @@ class Server(object):
       fn: The @tf.function wrapped function or a list of such functions, with
         `input_signature` set. When a list of functions is provided,
         they are called in a round-robin manner.
-      batched: If True, the function is batched and the first dimension is the
-        batch dimension.
+      batched: If True, the function is batched and the first dimension (=N)
+        is the batch dimension. In such case N client calls will be batched
+        for a single invocation of the function. It is also possible for the
+        client to send a single batched request, in which case server-side
+        batching is skipped.
 
     Returns:
       A tf.Operation.

@@ -837,6 +837,22 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     self.assertAllEqual(43, client.foo(42))
     server.shutdown()
 
+  def test_batch_auto_detection(self):
+    address = self.get_unix_address()
+    server = ops.Server([address])
+
+    @tf.function(input_signature=[tf.TensorSpec(2, tf.int32)])
+    def foo(x):
+      return x + 1
+
+    server.bind(foo, batched=True)
+    server.start()
+
+    client = ops.Client(address)
+    t = tf.constant([1, 2])
+    self.assertAllEqual(t + 1, client.foo(t))
+    server.shutdown()
+
 
 if __name__ == '__main__':
   tf.test.main()

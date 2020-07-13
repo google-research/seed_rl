@@ -537,90 +537,33 @@ Status verify_args(const DataTypeVector& expected_arg_types,
   return Status::OK();
 }
 
-class DirectFn : public FnType {
+class DynamicFn : public FnType {
  public:
-  DirectFn(FunctionLibraryRuntime* lib, FunctionLibraryRuntime::Handle f_handle,
-           DataTypeVector&& input_types,
-           std::vector<TensorShape>&& input_shapes,
-           std::vector<Tensor>&& captures, GrpcServerResource* resource)
-      : lib_(lib),
-        f_handle_(f_handle),
-        input_types_(std::move(input_types)),
-        input_shapes_(std::move(input_shapes)),
-        captures_(std::move(captures)),
-        resource_(resource) {}
-
-  bool operator()(
-      ServerContext* server_ctx, gtl::ArraySlice<Tensor> args,
-      std::function<void(Status, std::vector<Tensor>)> callback) override {
-    Status status = verify_args(input_types_, input_shapes_, args);
-    if (!status.ok()) {
-      callback(status, {});
-      return false;
-    }
-    FunctionLibraryRuntime::Options f_opts;
-    f_opts.create_rendezvous = true;
-    std::shared_ptr<CancellationManager> c_mgr;
-    std::shared_ptr<std::function<void()>> deregister_fn;
-
-    status =
-        resource_->create_child_cancellation_manager(&c_mgr, &deregister_fn);
-
-    if (!status.ok()) {
-      callback(status, {});
-      return false;
-    }
-
-    f_opts.cancellation_manager = c_mgr.get();
-
-    std::vector<Tensor> full_args(args.begin(), args.end());
-    for (auto& capture : captures_) {
-      full_args.push_back(capture);
-    }
-    std::shared_ptr<std::vector<Tensor>> rets(new std::vector<Tensor>());
-    lib_->Run(f_opts, f_handle_, full_args, rets.get(),
-              [callback, rets, c_mgr](Status f_status) {
-                callback(f_status, *rets);
-              });
-    return true;
-  }
-
-  void Shutdown() override {}
-
- private:
-  FunctionLibraryRuntime* lib_;
-  FunctionLibraryRuntime::Handle f_handle_;
-  const DataTypeVector input_types_;
-  const std::vector<TensorShape> input_shapes_;
-  const std::vector<Tensor> captures_;
-  GrpcServerResource* resource_;
-};
-
-class BatchedFn : public FnType {
- public:
-  BatchedFn(FunctionLibraryRuntime* lib,
+  DynamicFn(FunctionLibraryRuntime* lib,
             FunctionLibraryRuntime::Handle f_handle,
             DataTypeVector&& input_types,
             std::vector<TensorShape>&& input_shapes,
             std::vector<Tensor>&& captures, GrpcServerResource* resource,
-            thread::ThreadPool* tp)
+            thread::ThreadPool* tp, bool batched)
       : lib_(lib),
         f_handle_(f_handle),
         input_types_(std::move(input_types)),
         input_shapes_(std::move(input_shapes)),
         captures_(std::move(captures)),
         resource_(resource),
-        batch_size_(input_shapes_[0].dim_size(0)),
+        batch_size_(batched ? input_shapes_[0].dim_size(0) : -1),
         tp_(tp),
         mu_(new mutex()) {
-    for (auto shape : input_shapes_) {
-      shape.RemoveDim(0);
-      arg_shapes_.push_back(shape);
+    if (batch_size_ != -1) {
+      for (auto shape : input_shapes_) {
+        shape.RemoveDim(0);
+        arg_shapes_.push_back(shape);
+      }
+      current_computation_ = BuildEmptyComputation();
     }
-    current_computation_ = BuildEmptyComputation();
   }
 
-  ~BatchedFn() {
+  ~DynamicFn() {
     Shutdown();
     delete current_computation_;
   }
@@ -628,6 +571,13 @@ class BatchedFn : public FnType {
   bool operator()(
       ServerContext* server_ctx, gtl::ArraySlice<Tensor> args,
       std::function<void(Status, std::vector<Tensor>)> callback) override {
+    // Is this a direct call not involving server-side batching?
+    // Exact match of the argument shapes means it was batched by the client.
+    if (batch_size_ == -1 ||
+        (!args.empty() && args[0].shape() == input_shapes_[0])) {
+      return DirectCall(server_ctx, args, callback);
+    }
+
     Status status = verify_args(input_types_, arg_shapes_, args);
     if (!status.ok()) {
       callback(status, {});
@@ -734,13 +684,15 @@ class BatchedFn : public FnType {
   void Shutdown() override {
     mutex_lock lock(*mu_);
     std::vector<Tensor> result;
-    for (auto& c : current_computation_->callbacks) {
-      if (c) {
-        c(errors::Cancelled("Server shutdown."), result);
+    if (current_computation_) {
+      for (auto& c : current_computation_->callbacks) {
+        if (c) {
+          c(errors::Cancelled("Server shutdown."), result);
+        }
       }
+      delete current_computation_;
+      current_computation_ = BuildEmptyComputation();
     }
-    delete current_computation_;
-    current_computation_ = BuildEmptyComputation();
     for (auto c : empty_computations_) {
       delete c;
     }
@@ -755,6 +707,40 @@ class BatchedFn : public FnType {
     std::vector<std::function<void(Status, std::vector<Tensor>)>> callbacks;
     std::atomic_int num_ready{0};
   };
+
+  bool DirectCall(ServerContext* server_ctx, gtl::ArraySlice<Tensor> args,
+    std::function<void(Status, std::vector<Tensor>)> callback) {
+    Status status = verify_args(input_types_, input_shapes_, args);
+    if (!status.ok()) {
+      callback(status, {});
+      return false;
+    }
+    FunctionLibraryRuntime::Options f_opts;
+    f_opts.create_rendezvous = true;
+    std::shared_ptr<CancellationManager> c_mgr;
+    std::shared_ptr<std::function<void()>> deregister_fn;
+
+    status =
+        resource_->create_child_cancellation_manager(&c_mgr, &deregister_fn);
+
+    if (!status.ok()) {
+      callback(status, {});
+      return false;
+    }
+
+    f_opts.cancellation_manager = c_mgr.get();
+
+    std::vector<Tensor> full_args(args.begin(), args.end());
+    for (auto& capture : captures_) {
+      full_args.push_back(capture);
+    }
+    std::shared_ptr<std::vector<Tensor>> rets(new std::vector<Tensor>());
+    lib_->Run(f_opts, f_handle_, full_args, rets.get(),
+              [callback, rets, c_mgr](Status f_status) {
+                callback(f_status, *rets);
+              });
+    return true;
+  }
 
   Computation* BuildEmptyComputation() {
     Computation* c = new Computation();
@@ -898,15 +884,9 @@ class GrpcServerBindOp : public OpKernel {
       output_types.push_back(output_arg.type());
     }
     std::unique_ptr<FnType> func;
-    if (batched_) {
-      func.reset(static_cast<FnType*>(new BatchedFn(
-          lib, f_handle, std::move(input_types), std::move(input_shapes_),
-          std::move(captures), resource, resource->func_tp.get())));
-    } else {
-      func.reset(static_cast<FnType*>(new DirectFn(
-          lib, f_handle, std::move(input_types), std::move(input_shapes_),
-          std::move(captures), resource)));
-    }
+    func.reset(static_cast<FnType*>(new DynamicFn(
+        lib, f_handle, std::move(input_types), std::move(input_shapes_),
+        std::move(captures), resource, resource->func_tp.get(), batched_)));
     OP_REQUIRES_OK(ctx, resource->tensor_handler()->Bind(
         fn_name_, output_specs_, std::move(func), first_bind_));
   }

@@ -17,8 +17,7 @@
 import tensorflow as tf
 
 
-def create_mlp(hidden_sizes, hidden_activation='relu',
-               last_layer_activation=None):
+def create_mlp(hidden_sizes, hidden_activation, last_layer_activation):
   model = tf.keras.Sequential()
   for i, size in enumerate(hidden_sizes):
     if i == len(hidden_sizes) - 1:
@@ -33,7 +32,12 @@ def create_mlp(hidden_sizes, hidden_activation='relu',
 class ActorCriticMLP(tf.Module):
   """MLP agent."""
 
-  def __init__(self, parametric_action_distribution, n_critics, mlp_sizes):
+  def __init__(self,
+               parametric_action_distribution,
+               n_critics,
+               mlp_sizes,
+               hidden_activation='relu',
+               last_layer_activation=None):
     """Initializes the agent.
 
     Args:
@@ -41,14 +45,23 @@ class ActorCriticMLP(tf.Module):
         specifing a parametric distribution over actions to be used.
       n_critics: Number of critic networks to use, usually 1 or 2.
       mlp_sizes: List of integers with sizes of hidden MLP layers.
+      hidden_activation: activation function for hidden layers of the networks
+        (policy, Q and V).
+      last_layer_activation: activation function for last layers of the networks
+        (policy, Q and V). Use None for linear last layer.
     """
     super(ActorCriticMLP, self).__init__()
     self._action_distribution = parametric_action_distribution
 
-    self._actor_mlp = create_mlp(mlp_sizes +
-                                 [self._action_distribution.param_size])
-    self._q_mlp = [create_mlp(mlp_sizes + [1]) for _ in range(n_critics)]
-    self._v_mlp = create_mlp(mlp_sizes + [1])
+    self._actor_mlp = create_mlp(
+        mlp_sizes + [self._action_distribution.param_size], hidden_activation,
+        last_layer_activation)
+    self._q_mlp = [
+        create_mlp(mlp_sizes + [1], hidden_activation, last_layer_activation)
+        for _ in range(n_critics)
+    ]
+    self._v_mlp = create_mlp(mlp_sizes + [1], hidden_activation,
+                             last_layer_activation)
 
   @tf.function
   def initial_state(self, batch_size):
@@ -136,7 +149,13 @@ class LSTMwithFeedForwardBranch(tf.Module):
   Based on https://arxiv.org/pdf/1710.06537.pdf.
   """
 
-  def __init__(self, lstm_sizes, pre_mlp_sizes, post_mlp_sizes, ff_mlp_sizes):
+  def __init__(self,
+               lstm_sizes,
+               pre_mlp_sizes,
+               post_mlp_sizes,
+               ff_mlp_sizes,
+               hidden_activation='relu',
+               last_layer_activation=None):
     """Initialize the network.
 
     Args:
@@ -144,11 +163,18 @@ class LSTMwithFeedForwardBranch(tf.Module):
       pre_mlp_sizes: Hidden sizes of MLP layers applied before LSTM.
       post_mlp_sizes: Hidden sizes of MLP layers applied after LSTM.
       ff_mlp_sizes: Hidden sizes of MLP layers applied in parallel to LSTM.
+      hidden_activation: activation function for hidden layers of the networks
+        (policy, Q and V).
+      last_layer_activation: activation function for last layers of the networks
+        (policy, Q and V). Use None for linear last layer.
     """
     super(LSTMwithFeedForwardBranch, self).__init__(name='MLPandLSTM')
-    self._pre_mlp = create_mlp(pre_mlp_sizes)
-    self._post_mlp = create_mlp(post_mlp_sizes)
-    self._ff_mlp = create_mlp(ff_mlp_sizes)
+    self._pre_mlp = create_mlp(pre_mlp_sizes, hidden_activation,
+                               last_layer_activation)
+    self._post_mlp = create_mlp(post_mlp_sizes, hidden_activation,
+                                last_layer_activation)
+    self._ff_mlp = create_mlp(ff_mlp_sizes, hidden_activation,
+                              last_layer_activation)
     self._core = tf.keras.layers.StackedRNNCells([tf.keras.layers.LSTMCell(size)
                                                   for size in lstm_sizes])
 
@@ -359,4 +385,3 @@ class ActorCriticLSTM(tf.Module):
                   for (net, net_state) in zip(self._networks, state)]
 
     return action, new_states
-

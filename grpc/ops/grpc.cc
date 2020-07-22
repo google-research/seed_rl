@@ -78,7 +78,6 @@ REGISTER_OP("GrpcServerBind")
     .Attr("input_shapes: list(shape)")
     .Attr("output_shapes: list(shape)")
     .Attr("output_specs: string")
-    .Attr("batched: bool")
     .Attr("first_bind: bool")
     .SetShapeFn(shape_inference::NoOutputs)
     .Doc(R"doc(
@@ -630,14 +629,14 @@ class DynamicFn : public FnType {
             const auto& shape = computation->outputs[i].shape();
             if (shape.dims() <= 0) {
               f_status = errors::InvalidArgument(
-                  "Output must be at least rank 1 when batched=True");
+                  "Output must be at least rank 1 when batching is enabled");
               break;
             }
 
             if (input_shapes_[0].dim_size(0) != shape.dim_size(0)) {
               f_status = errors::InvalidArgument(
                   "All outputs must have the same batch size "
-                  "as the inputs when batched=True, expected: ",
+                  "as the inputs when batching is enabled, expected: ",
                   input_shapes_[0].dim_size(0), " was: ", shape.dim_size(0));
               break;
             }
@@ -788,42 +787,8 @@ class GrpcServerBindOp : public OpKernel {
                     "Unable to parse StructuredValue output_spec string: ",
                     output_spec_string));
 
-    OP_REQUIRES_OK(ctx, ctx->GetAttr("batched", &batched_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("first_bind", &first_bind_));
-
-    if (batched_) {
-      OP_REQUIRES(
-          ctx, !input_shapes_.empty(),
-          errors::InvalidArgument(
-              "Function must have at least one input when batched=True"));
-
-      for (auto& shape : input_shapes_) {
-        OP_REQUIRES(
-            ctx, shape.dims() > 0,
-            errors::InvalidArgument(
-                "All inputs must at least be rank 1 when batched=True"));
-        OP_REQUIRES(
-            ctx, input_shapes_[0].dim_size(0) == shape.dim_size(0),
-            errors::InvalidArgument("All inputs must have the same first "
-                                    "dimension when batched=True"));
-      }
-
-      for (auto& shape : output_shapes) {
-        OP_REQUIRES(
-            ctx, shape.dims() == -1 || shape.dims() > 0,
-            errors::InvalidArgument("All outputs must at least be rank 1 when "
-                                    "batched=True but rank was: ",
-                                    shape.dims()));
-        if (shape.dims() > 0 && shape.dim_size(0) != -1) {
-          OP_REQUIRES(
-              ctx, input_shapes_[0].dim_size(0) == shape.dim_size(0),
-              errors::InvalidArgument(
-                  "All outputs must have the same batch size "
-                  "as the inputs when batched=True, expected: ",
-                  input_shapes_[0].dim_size(0), " was: ", shape.dim_size(0)));
-        }
-      }
-    }
+    batched_ = CanBatch(output_shapes);
   }
 
   void Compute(OpKernelContext* ctx) override {
@@ -892,6 +857,31 @@ class GrpcServerBindOp : public OpKernel {
   }
 
  private:
+  bool CanBatch(const std::vector<PartialTensorShape>& output_shapes) {
+    if (input_shapes_.empty()) {
+      return false;
+    }
+    for (auto& shape : input_shapes_) {
+      if (shape.dims() <= 0) {
+        return false;
+      }
+      if (input_shapes_[0].dim_size(0) != shape.dim_size(0)) {
+        return false;
+      }
+    }
+    for (auto& shape : output_shapes) {
+      if (shape.dims() == 0) {
+        return false;
+      }
+      if (shape.dims() > 0 && shape.dim_size(0) != -1) {
+        if (input_shapes_[0].dim_size(0) != shape.dim_size(0)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
   string fn_name_;
   NameAttrList fn_;
   std::vector<TensorShape> input_shapes_;

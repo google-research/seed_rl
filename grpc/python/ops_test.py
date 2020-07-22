@@ -39,16 +39,15 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
   def get_unix_address(self):
     return 'unix:/tmp/%s' % uuid.uuid4()
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_simple(self, dim, batched):
+  def test_simple(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.int32)])
     def foo(x):
       return x + 1
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
@@ -57,16 +56,15 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
 
 
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_simple_two_calls(self, dim, batched):
+  def test_simple_two_calls(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.int32)])
     def foo(x):
       return x + 1
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
@@ -82,72 +80,67 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     def foo():
       return 42
 
-    # Empty input is only allowed when batched=False.
-    server.bind(foo, batched=False)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
     self.assertAllEqual(42, client.foo())
     server.shutdown()
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_empty_output(self, dim, batched):
+  def test_empty_output(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.int32)])
     def foo(x):  
       return []
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
     self.assertAllEqual([], client.foo(42))
     server.shutdown()
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_no_output(self, dim, batched):
+  def test_no_output(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.int32)])
     def foo(x):  
       pass
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
     self.assertIsNone(client.foo(42))
     server.shutdown()
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_large_tensor(self, dim, batched):
+  def test_large_tensor(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
     t = tf.fill([10, 1024, 1024], 1)  # 40MB
 
-    @tf.function(input_signature=[tf.TensorSpec(dim + list(t.shape), tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([] + list(t.shape), tf.int32)])
     def foo(x):
       return x + 1
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
     self.assertAllEqual(t + 1, client.foo(t))
     server.shutdown()
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_create_variable(self, dim, batched):
+  def test_create_variable(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
     state = [None]
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.int32)])
     def foo(x):
       if state[0] is None:
         with tf.device('/device:CPU:0'):
@@ -155,7 +148,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       with tf.device('/device:CPU:0'):
         return x + state[0]
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
@@ -165,16 +158,15 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     self.assertAllEqual(1, client.foo(1))
     server.shutdown()
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_wait_for_server(self, dim, batched):
+  def test_wait_for_server(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.int32)])
     def foo(x):
       return x + 1
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
 
     def create_client():
       result = ops.Client(address)
@@ -188,16 +180,15 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       self.assertAllEqual(43, f.result().foo(42))
       server.shutdown()
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_wait_for_server2(self, dim, batched):
+  def test_wait_for_server2(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.int32)])
     def foo(x):
       return x + 1
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
 
     def create_and_send():
       client = ops.Client(address)
@@ -211,32 +202,30 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       f.result()
       server.shutdown()
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_upvalue(self, dim, batched):
+  def test_upvalue(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
     a = tf.constant(2)
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.int32)])
     def foo(x):
       return x / a
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
     self.assertAllEqual(21, client.foo(42))
     server.shutdown()
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_queue(self, dim, batched):
+  def test_queue(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
     q = tf.queue.FIFOQueue(1, [tf.int32], [()])
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.int32)])
     def foo(x):
       if x.shape == (1,):
         q.enqueue_many([x])
@@ -244,7 +233,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
         q.enqueue([x])
       return x
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
@@ -252,16 +241,15 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     self.assertAllEqual(42, q.dequeue())
     server.shutdown()
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_string(self, dim, batched):
+  def test_string(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.string)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.string)])
     def hello(x):
       return tf.strings.join([x, ' world'])
 
-    server.bind(hello, batched=batched)
+    server.bind(hello)
     server.start()
 
     client = ops.Client(address)
@@ -313,16 +301,15 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
                                 'Server is already started'):
       server.start()
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_invalid_number_of_arguments(self, dim, batched):
+  def test_invalid_number_of_arguments(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.int32)])
     def foo(x):
       return x + 1
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
@@ -331,16 +318,15 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       client.foo([42, 43])
     server.shutdown()
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_invalid_type(self, dim, batched):
+  def test_invalid_type(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.int32)])
     def foo(x):
       return x + 1
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
@@ -350,17 +336,16 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       client.foo('foo')
     server.shutdown()
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_failing_function(self, dim, batched):
+  def test_failing_function(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.int32)])
     def foo(x):
       tf.assert_equal(1, x)  # Will fail.
       return x
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
@@ -369,23 +354,22 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       client.foo(42)
     server.shutdown()
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_nests(self, dim, batched):
+  def test_nests(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
-    signature = (tf.TensorSpec(dim, tf.int32, name='arg1'),
+    signature = (tf.TensorSpec([], tf.int32, name='arg1'),
                  Some(
-                     tf.TensorSpec(dim, tf.int32, name='arg2'), [
-                         tf.TensorSpec(dim, tf.int32, name='arg3'),
-                         tf.TensorSpec(dim, tf.int32, name='arg4')
+                     tf.TensorSpec([], tf.int32, name='arg2'), [
+                         tf.TensorSpec([], tf.int32, name='arg3'),
+                         tf.TensorSpec([], tf.int32, name='arg4')
                      ]))
 
     @tf.function(input_signature=signature)
     def foo(*args):
       return tf.nest.map_structure(lambda t: t + 1, args)
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
@@ -398,16 +382,15 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
         tf.nest.flatten(expected_outputs), tf.nest.flatten(outputs))
     server.shutdown()
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_call_after_shutdown(self, dim, batched):
+  def test_call_after_shutdown(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.int32)])
     def foo(x):
       return x + 1
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
@@ -415,20 +398,19 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     with self.assertRaisesRegex(tf.errors.UnavailableError, 'server closed'):
       client.foo(42)
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_shutdown_while_in_call(self, dim, batched):
+  def test_shutdown_while_in_call(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
     is_waiting = threading.Event()
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.int32)])
     def foo(x):
       tf.py_function(is_waiting.set, [], [])
       tf.py_function(time.sleep, [1], [])
       return x + 1
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
@@ -439,21 +421,20 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       with self.assertRaisesRegex(tf.errors.UnavailableError, 'server closed'):
         f.result()
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_shutdown_while_in_blocking_call(self, dim, batched):
+  def test_shutdown_while_in_blocking_call(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
     q = tf.queue.FIFOQueue(1, [tf.int32])
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.int32)])
     def foo(x):
       q.enqueue(x)
       q.enqueue(x)
       q.enqueue(x)
       return x
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
@@ -470,21 +451,20 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       except tf.errors.UnavailableError:
         pass
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_deletion_while_in_blocking_call(self, dim, batched):
+  def test_deletion_while_in_blocking_call(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
     q = tf.queue.FIFOQueue(1, [tf.int32])
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.int32)])
     def foo(x):
       q.enqueue(x)
       q.enqueue(x)
       q.enqueue(x)
       return x
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
@@ -501,19 +481,18 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       except tf.errors.UnavailableError:
         pass
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_call_after_shutdown_and_start(self, dim, batched):
+  def test_call_after_shutdown_and_start(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
     q = tf.queue.FIFOQueue(1, [tf.int32])  # To test cancellation is reset.
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.int32)])
     def foo(x):
       q.enqueue(x)
       return x + 1
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
     server.start()
     server.shutdown()
     server.start()
@@ -522,79 +501,25 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     self.assertAllEqual(43, client.foo(42))
     server.shutdown()
 
-  def test_batched_first_dimension_must_match(self):
+  def test_no_batching_when_output_rank0(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
     @tf.function(input_signature=[
-        tf.TensorSpec([1], tf.int32),
+        tf.TensorSpec([2], tf.int32),
         tf.TensorSpec([2], tf.int32)
-    ])
-    def foo(x, y):
-      return x, y
-
-    with self.assertRaisesRegex(
-        tf.errors.InvalidArgumentError,
-        'All inputs must have the same first dimension when batched=True'):
-      server.bind(foo, batched=True)
-
-  def test_batched_inputs_at_least_rank1(self):
-    address = self.get_unix_address()
-    server = ops.Server([address])
-
-    @tf.function(input_signature=[
-        tf.TensorSpec([1], tf.int32),
-        tf.TensorSpec([], tf.int32)
-    ])
-    def foo(x, y):
-      return x, y
-
-    with self.assertRaisesRegex(
-        tf.errors.InvalidArgumentError,
-        'All inputs must at least be rank 1 when batched=True'):
-      server.bind(foo, batched=True)
-
-  def test_batched_outputs_at_least_rank1(self):
-    address = self.get_unix_address()
-    server = ops.Server([address])
-
-    @tf.function(input_signature=[
-        tf.TensorSpec([1], tf.int32),
-        tf.TensorSpec([1], tf.int32)
     ])
     def foo(unused_x, unused_y):
       return 1
 
+    server.bind(foo)
+    server.start()
+
+    client = ops.Client(address)
     with self.assertRaisesRegex(
         tf.errors.InvalidArgumentError,
-        'All outputs must at least be rank 1 when batched=True'):
-      server.bind(foo, batched=True)
-
-  def test_batched_at_least_one_input(self):
-    address = self.get_unix_address()
-    server = ops.Server([address])
-
-    @tf.function(input_signature=[])
-    def foo():
-      return 1
-
-    with self.assertRaisesRegex(
-        tf.errors.InvalidArgumentError,
-        'Function must have at least one input when batched=True'):
-      server.bind(foo, batched=True)
-
-  def test_batched_output_is_batched(self):
-    address = self.get_unix_address()
-    server = ops.Server([address])
-
-    @tf.function(input_signature=[tf.TensorSpec([1], tf.int32)])
-    def foo(unused_x):
-      return tf.zeros([3])
-
-    with self.assertRaisesRegex(
-        tf.errors.InvalidArgumentError,
-        'All outputs must have the same batch size as the inputs.'):
-      server.bind(foo, batched=True)
+        r'Expects arg\[0\] to have shape \[2\] but had shape \[\]'):
+      client.foo(1, 1)
 
   def test_shutdown_waiting_for_full_batch(self):
     address = self.get_unix_address()
@@ -604,7 +529,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     def foo(x):
       return x + 1
 
-    server.bind(foo, batched=True)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
@@ -615,16 +540,15 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       with self.assertRaisesRegex(tf.errors.UnavailableError, 'server closed'):
         f.result()
 
-  @parameterized.parameters(([], False), ([1], True), ([2], True))
-  def test_two_clients(self, dim, batched):
+  def test_two_clients(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.int32)])
     def foo(x):
       return x + 1
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
@@ -641,7 +565,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     address = self.get_unix_address()
     server = ops.Server([address])
 
-    @tf.function(input_signature=[tf.TensorSpec([1], tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([2], tf.int32)])
     def foo(x):
       if tf.equal(x[0], 0):
         return tf.zeros([])
@@ -650,22 +574,21 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       else:
         return tf.zeros([1])
 
-    server.bind(foo, batched=True)
+    server.bind(foo)
     server.start()
 
-    client = ops.Client(address)
-    self.assertAllEqual(0, client.foo(42))
+    def client():
+      client = ops.Client(address)
+      with self.assertRaisesRegex(
+          tf.errors.InvalidArgumentError,
+          'Output must be at least rank 1 when batching is enabled'):
+        client.foo(0)
 
-    with self.assertRaisesRegex(
-        tf.errors.InvalidArgumentError,
-        'Output must be at least rank 1 when batched=True'):
-      client.foo(0)
-
-    with self.assertRaisesRegex(
-        tf.errors.InvalidArgumentError,
-        'All outputs must have the same batch size as '
-        'the inputs when batched=True, expected: 1 was: 2'):
-      client.foo(1)
+    with futures.ThreadPoolExecutor(max_workers=2) as executor:
+      f1 = executor.submit(client)
+      f2 = executor.submit(client)
+      f1.result()
+      f2.result()
 
     server.shutdown()
 
@@ -679,29 +602,28 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       result.set_shape([None])
       return result
 
-    server.bind(foo, batched=True)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
     self.assertAllEqual(42, client.foo(42))
     server.shutdown()
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_invalid_shape(self, dim, batched):
+  def test_invalid_shape(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
-    @tf.function(input_signature=[tf.TensorSpec(dim + [4, 3], tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([4, 3], tf.int32)])
     def foo(x):
       return x
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
     with self.assertRaisesRegex(
         tf.errors.InvalidArgumentError,
-        r'Expects arg\[0\] to have shape \[4,3\] but had shape \[3,4\]'):
+        r'Expects arg\[0\] to have shape \[3\] but had shape \[3,4\]'):
       client.foo(tf.zeros([3, 4], tf.int32))  # Shape [3, 4], not [4, 3]
 
     server.shutdown()
@@ -714,7 +636,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     def foo(x):
       return x + 1
 
-    server.bind(foo, batched=True)
+    server.bind(foo)
     server.start()
 
     num_clients = 10
@@ -740,22 +662,21 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
             pass
           break
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_tpu(self, dim, batched):
+  def test_tpu(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
     with tf.device('/device:CPU:0'):
       a = tf.Variable(1)
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.int32)])
     def foo(x):
       with tf.device('/device:CPU:0'):
         b = a + 1
         c = x + 1
       return x + b, c
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
@@ -764,8 +685,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     self.assertAllEqual(43, b)
     server.shutdown()
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_tpu_tf_function_same_device(self, dim, batched):
+  def test_tpu_tf_function_same_device(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
@@ -778,13 +698,13 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       def get_a_plus_one():
         return a + 1
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.int32)])
     def foo(x):
       with tf.device('/device:CPU:0'):
         b = x + get_a_plus_one()
       return b + 1
 
-    server.bind(foo, batched=batched)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)
@@ -792,24 +712,23 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     self.assertAllEqual(4, a)
     server.shutdown()
 
-  @parameterized.parameters(([], False), ([1], True))
-  def test_bind_multiple_functions(self, dim, batched):
+  def test_bind_multiple_functions(self):
     address = self.get_unix_address()
     server = ops.Server([address])
 
-    @tf.function(input_signature=[tf.TensorSpec(dim, tf.int32)])
+    @tf.function(input_signature=[tf.TensorSpec([], tf.int32)])
     def foo(x):
       return x + 1
 
     @tf.function(input_signature=[
-        tf.TensorSpec(dim, tf.int32),
-        tf.TensorSpec(dim, tf.int32)
+        tf.TensorSpec([], tf.int32),
+        tf.TensorSpec([], tf.int32)
     ])
     def bar(x, y):
       return x * y
 
-    server.bind(foo, batched=batched)
-    server.bind(bar, batched=batched)
+    server.bind(foo)
+    server.bind(bar)
     server.start()
 
     client = ops.Client(address)
@@ -845,7 +764,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     def foo(x):
       return x + 1
 
-    server.bind(foo, batched=True)
+    server.bind(foo)
     server.start()
 
     client = ops.Client(address)

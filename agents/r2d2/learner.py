@@ -836,7 +836,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     return agent_outputs.action
 
   with strategy.scope():
-    server.bind(inference, batched=True)
+    server.bind(inference)
   server.start()
 
   # Execute learning and track performance.

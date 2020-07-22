@@ -414,7 +414,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     return parametric_action_distribution.postprocess(agent_outputs.action)
 
   with strategy.scope():
-    server.bind(inference, batched=True)
+    server.bind(inference)
   server.start()
 
   def dequeue(ctx):

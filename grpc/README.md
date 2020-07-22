@@ -21,14 +21,14 @@ server = grpc.Server([‘unix:/tmp/foo’, ‘localhost:8000’])
 def foo(x):
   return x + 1
 
-server.bind(foo, batched=True)
+server.bind(foo)
 
 @tf.function(input_signature=[tf.TensorSpec([], tf.int32),
                               tf.TensorSpec([], tf.int32)])
 def bar(x, y):
   return x + y
 
-server.bind(bar, batched=False)
+server.bind(bar)
 
 server.start()
 ```

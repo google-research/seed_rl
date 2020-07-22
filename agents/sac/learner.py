@@ -607,7 +607,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     return parametric_action_distribution.postprocess(agent_actions)
 
   with strategy.scope():
-    server.bind(inference, batched=True)
+    server.bind(inference)
   server.start()
 
   dataset = create_dataset(unroll_queue, replay_buffer, training_strategy,

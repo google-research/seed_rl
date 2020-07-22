@@ -482,7 +482,8 @@ class ProgressLogger(object):
                summary_writer=None,
                initial_period=0.01,
                period_factor=1.01,
-               max_period=10.0):
+               max_period=10.0,
+               starting_step=0):
     """Constructs ProgressLogger.
 
     Args:
@@ -493,6 +494,7 @@ class ProgressLogger(object):
         multiplied after each iteration (exponential back-off).
       max_period: Maximal logging period in seconds
         (the end of exponential back-off).
+      starting_step: Step from which to start the summary writer.
     """
     self.summary_writer = summary_writer
     self.period = initial_period
@@ -501,7 +503,7 @@ class ProgressLogger(object):
     # Array of strings with names of values to be logged.
     self.log_keys = []
     self.log_keys_set = set()
-    self.step_cnt = tf.Variable(-1, dtype=tf.int64)
+    self.step_cnt = tf.Variable(starting_step-1, dtype=tf.int64)
     self.ready_values = tf.Variable([-1.0],
                                     dtype=tf.float32,
                                     shape=tf.TensorShape(None))
@@ -509,7 +511,7 @@ class ProgressLogger(object):
     self.logging_callback = None
     self.terminator = None
     self.last_log_time = timeit.default_timer()
-    self.last_log_step = 0
+    self.last_log_step = starting_step
 
   def start(self, logging_callback=None):
     assert self.logger_thread is None

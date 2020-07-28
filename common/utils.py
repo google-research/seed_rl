@@ -496,20 +496,35 @@ class ProgressLogger(object):
         (the end of exponential back-off).
       starting_step: Step from which to start the summary writer.
     """
-    self.summary_writer = summary_writer
+    # summary_writer, last_log_{time, step} are set in reset() function.
+    self.summary_writer = None
+    self.last_log_time = None
+    self.last_log_step = 0
     self.period = initial_period
     self.period_factor = period_factor
     self.max_period = max_period
     # Array of strings with names of values to be logged.
     self.log_keys = []
     self.log_keys_set = set()
-    self.step_cnt = tf.Variable(starting_step-1, dtype=tf.int64)
+    self.step_cnt = tf.Variable(-1, dtype=tf.int64)
     self.ready_values = tf.Variable([-1.0],
                                     dtype=tf.float32,
                                     shape=tf.TensorShape(None))
     self.logger_thread = None
     self.logging_callback = None
     self.terminator = None
+    self.reset(summary_writer, starting_step)
+
+  def reset(self, summary_writer=None, starting_step=0):
+    """Resets the progress logger.
+
+    Args:
+      summary_writer: Tensorflow summary writer to use.
+      starting_step: Step from which to start the summary writer.
+    """
+    self.summary_writer = summary_writer
+    self.step_cnt.assign(starting_step - 1)
+    self.ready_values.assign([-1.0])
     self.last_log_time = timeit.default_timer()
     self.last_log_step = starting_step
 

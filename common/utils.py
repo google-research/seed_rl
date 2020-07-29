@@ -470,6 +470,10 @@ class Aggregator(tf.Module):
         should not exist (in which case, the value is broadcasted to all actor
         ids).
     """
+    tf.debugging.assert_equal(
+        tf.shape(actor_ids),
+        tf.shape(tf.unique(actor_ids)[0]),
+        message=f'Duplicate actor ids in Aggregator: {self.name}')
     tf.nest.assert_same_structure(values, self._state)
     for s, v in zip(tf.nest.flatten(self._state), tf.nest.flatten(values)):
       s.scatter_update(tf.IndexedSlices(v, actor_ids))

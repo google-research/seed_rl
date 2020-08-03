@@ -22,6 +22,7 @@ from absl import logging
 
 import gym
 import numpy as np
+from seed_rl.common import common_flags  
 from seed_rl.dmlab import games
 import tensorflow as tf
 
@@ -37,7 +38,6 @@ flags.DEFINE_string(
 flags.DEFINE_string('game', 'explore_goal_locations_small', 'Game/level name.')
 flags.DEFINE_integer('width', 96, 'Width of observation.')
 flags.DEFINE_integer('height', 72, 'Height of observation.')
-flags.DEFINE_integer('num_action_repeats', 4, 'Number of action repeats.')
 flags.DEFINE_string('level_cache_dir', None, 'Global level cache directory.')
 
 

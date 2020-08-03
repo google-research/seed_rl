@@ -18,6 +18,7 @@ from absl import flags
 from absl import logging
 
 import gym
+from seed_rl.common import common_flags  
 from seed_rl.football import observation
 
 FLAGS = flags.FLAGS
@@ -29,7 +30,6 @@ flags.DEFINE_enum('reward_experiment', 'scoring',
                   'Reward to be used for training.')
 flags.DEFINE_enum('smm_size', 'default', ['default', 'medium', 'large'],
                   'Size of the Super Mini Map.')
-flags.DEFINE_integer('num_action_repeats', 1, 'Number of action repeats.')
 
 
 def create_environment(_):

@@ -21,13 +21,13 @@ from absl import logging
 import atari_py  
 import gym
 from seed_rl.atari import atari_preprocessing
+from seed_rl.common import common_flags  
 
 
 FLAGS = flags.FLAGS
 
 # Environment settings.
 flags.DEFINE_string('game', 'Pong', 'Game name.')
-flags.DEFINE_integer('num_action_repeats', 4, 'Number of action repeats.')
 flags.DEFINE_integer('max_random_noops', 30,
                      'Maximal number of random no-ops at the beginning of each '
                      'episode.')

@@ -465,11 +465,6 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
 
     logger.step_end(logs, training_strategy, iter_frame_ratio)
 
-  # Logging.
-  summary_writer = tf.summary.create_file_writer(
-      FLAGS.logdir, flush_millis=20000, max_queue=1000)
-  logger = utils.ProgressLogger(summary_writer=summary_writer)
-
   # Setup checkpointing and restore checkpoint.
   ckpt = tf.train.Checkpoint(agent=agent, target_agent=target_agent,
                              optimizer=optimizer)
@@ -483,6 +478,12 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     logging.info('Restoring checkpoint: %s', manager.latest_checkpoint)
     ckpt.restore(manager.latest_checkpoint).assert_consumed()
     last_ckpt_time = time.time()
+
+  # Logging.
+  summary_writer = tf.summary.create_file_writer(
+      FLAGS.logdir, flush_millis=20000, max_queue=1000)
+  logger = utils.ProgressLogger(summary_writer=summary_writer,
+                                starting_step=iterations * iter_frame_ratio)
 
   server = grpc.Server([FLAGS.server_address])
 

@@ -13,6 +13,7 @@
 
 #include <functional>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "grpcpp/grpcpp.h"
@@ -510,6 +511,7 @@ REGISTER_KERNEL_BUILDER(Name("CreateGrpcServer").Device(DEVICE_CPU),
 
 Status verify_args(const DataTypeVector& expected_arg_types,
                    const std::vector<TensorShape>& expected_arg_shapes,
+                   int batching_dims_count,
                    gtl::ArraySlice<Tensor> actual_args) {
   unsigned int num_expected_arguments = expected_arg_types.size();
   if (num_expected_arguments != actual_args.size()) {
@@ -519,11 +521,20 @@ Status verify_args(const DataTypeVector& expected_arg_types,
   }
 
   for (unsigned int i = 0; i < actual_args.size(); ++i) {
-    if (expected_arg_shapes[i] != actual_args[i].shape()) {
-      return errors::InvalidArgument("Expects arg[", i, "] to have shape ",
-                                     expected_arg_shapes[i].DebugString(),
-                                     " but had shape ",
-                                     actual_args[i].shape().DebugString());
+    if (expected_arg_shapes[i].dims() + batching_dims_count !=
+        actual_args[i].shape().dims()) {
+      return errors::InvalidArgument(
+          "Expects arg[", i, "] to have shape with ",
+          expected_arg_shapes[i].dims() + batching_dims_count,
+          " dimension(s), but had shape ",
+          actual_args[i].shape().DebugString());
+    }
+    if (!TensorShapeUtils::EndsWith(actual_args[i].shape(),
+                                    expected_arg_shapes[i])) {
+      return errors::InvalidArgument(
+          "Expects arg[", i, "] to have shape with suffix ",
+          expected_arg_shapes[i].DebugString(), ", but had shape ",
+          actual_args[i].shape().DebugString());
     }
 
     if (expected_arg_types[i] != actual_args[i].dtype()) {
@@ -533,6 +544,46 @@ Status verify_args(const DataTypeVector& expected_arg_types,
     }
   }
 
+  return Status::OK();
+}
+
+// Checks that @actual_args conform to the expected types and shapes.
+// Determines whether @actual_args are batched. Batched arguments have expected
+// shapes prefixed with the batching dimension. If the arguments do not
+// match expected types or shapes, returns an error status.
+// Otherwise, writes the batch size in @arg_batch_size.
+// If the arguments are not batched, writes 0 in @arg_batch_size.
+Status GetArgBatchSize(const DataTypeVector& expected_arg_types,
+                       const std::vector<TensorShape>& expected_arg_shapes,
+                       gtl::ArraySlice<Tensor> actual_args,
+                       int* arg_batch_size) {
+  const bool batched =
+      !actual_args.empty() && !expected_arg_shapes.empty() &&
+      actual_args[0].shape().dims() == expected_arg_shapes[0].dims() + 1;
+  const int batching_dims_count = batched ? 1 : 0;
+  const Status status = verify_args(expected_arg_types, expected_arg_shapes,
+                                    batching_dims_count, actual_args);
+  if (!status.ok()) {
+    return status;
+  }
+
+  if (!batched) {
+    *arg_batch_size = 0;
+    return Status::OK();
+  }
+
+  // Check that the batching dimension is the same for all arguments.
+  const int expected_batch_size = actual_args[0].shape().dim_size(0);
+  for (unsigned int i = 1; i < actual_args.size(); ++i) {
+    if (actual_args[i].shape().dim_size(0) != expected_batch_size) {
+      return errors::InvalidArgument("Expects arg[", i,
+                                     "] to start with the batching dimension ",
+                                     expected_batch_size, " but had shape ",
+                                     actual_args[i].shape().DebugString());
+    }
+  }
+
+  *arg_batch_size = expected_batch_size;
   return Status::OK();
 }
 
@@ -577,21 +628,30 @@ class DynamicFn : public FnType {
       return DirectCall(server_ctx, args, callback);
     }
 
-    Status status = verify_args(input_types_, arg_shapes_, args);
+    int arg_batch_size = 0;
+    Status status =
+        GetArgBatchSize(input_types_, arg_shapes_, args, &arg_batch_size);
     if (!status.ok()) {
       callback(status, {});
       return false;
     }
+    const bool args_batched = arg_batch_size > 0;
+    const int slice_count = args_batched ? arg_batch_size : 1;
 
     int64 index;
     Computation* computation = nullptr;
     {
       mutex_lock lock(*mu_);
       CHECK(current_computation_);
-      index = next_index_++;
+      index = next_index_;
+      next_index_ += slice_count;
       computation = current_computation_;
 
-      if (index == batch_size_ - 1) {
+      // Note: it can happen that incoming batches have different sizes,
+      // in this case next_index_ can exceed batch_size_.
+
+      CHECK_LE(next_index_, batch_size_) << "Learner-side batch size exceeded";
+      if (next_index_ == batch_size_) {
         next_index_ = 0;
         if (!empty_computations_.empty()) {
           current_computation_ = empty_computations_.back();
@@ -603,14 +663,22 @@ class DynamicFn : public FnType {
     }
 
     // Copy input tensors to the batched input tensors.
-    for (unsigned int i = 0; i < args.size(); ++i) {
-      TF_CHECK_OK(batch_util::CopyElementToSlice(
-          args[i], &computation->request[i], index));
+    if (!args_batched) {
+      for (unsigned int i = 0; i < args.size(); ++i) {
+        TF_CHECK_OK(batch_util::CopyElementToSlice(
+            args[i], &computation->request[i], index));
+      }
+    } else {
+      for (unsigned int i = 0; i < args.size(); ++i) {
+        TF_CHECK_OK(batch_util::CopyContiguousSlices(
+            args[i], 0, index, arg_batch_size, &computation->request[i]));
+      }
     }
 
-    computation->callbacks[index] = callback;
+    // Populate the callback for the last slice in the batch.
+    computation->callbacks[index + slice_count - 1] = callback;
 
-    int num_ready = ++computation->num_ready;
+    int num_ready = computation->num_ready += slice_count;
     if (num_ready == batch_size_) {
       // A full batch have been filled up, so the function should be executed.
       FunctionLibraryRuntime::Options f_opts;
@@ -621,8 +689,8 @@ class DynamicFn : public FnType {
           resource_->create_child_cancellation_manager(&c_mgr, &deregister_fn);
       CHECK(status.ok());
       f_opts.cancellation_manager = c_mgr.get();
-      auto f_callback = [this, deregister_fn, computation,
-                         c_mgr](Status f_status) {
+      auto f_callback = [this, deregister_fn, computation, c_mgr,
+                         args_batched](Status f_status) {
         (*deregister_fn)();
         if (f_status.ok()) {
           for (unsigned int i = 0; i < computation->outputs.size(); ++i) {
@@ -647,22 +715,42 @@ class DynamicFn : public FnType {
         // Make sure computation is freed once callbacks are done.
         std::shared_ptr<Computation> done_computation;
         done_computation.reset(computation);
+        int prev_batch_limit = -1;
+        std::vector<std::pair<int, int>> batch_bounds;
+        for (int j = 0; j < batch_size_; j++) {
+          if (!computation->callbacks[j]) continue;
+          batch_bounds.push_back(std::make_pair(prev_batch_limit + 1, j + 1));
+          prev_batch_limit = j;
+        }
+
         const int work_unit_size =
-            (batch_size_ + workers_thread_pools - 1) / workers_thread_pools;
-        for (int j = 0; j < batch_size_; j += work_unit_size) {
-          const int limit = std::min(j + work_unit_size, batch_size_);
-          tp_->Schedule([j, done_computation, f_status, limit]() {
+            (batch_bounds.size() + workers_thread_pools - 1) /
+            workers_thread_pools;
+        for (int j = 0; j < batch_bounds.size(); j += work_unit_size) {
+          const int limit =
+              std::min<int>(j + work_unit_size, batch_bounds.size());
+          tp_->Schedule([j, done_computation, f_status, limit, batch_bounds,
+                         args_batched]() {
             for (int x = j; x < limit; x++) {
+              const int batch_start = batch_bounds[x].first;
+              const int batch_limit = batch_bounds[x].second;
               std::vector<Tensor> rets;
               if (f_status.ok()) {
                 rets.reserve(done_computation->outputs.size());
                 // Pass the slice of the batched outputs to the return vector.
                 for (unsigned int i = 0; i < done_computation->outputs.size();
                      ++i) {
-                  rets.push_back(done_computation->outputs[i].SubSlice(x));
+                  if (args_batched) {
+                    rets.push_back(done_computation->outputs[i].Slice(
+                        batch_start, batch_limit));
+                  } else {
+                    rets.push_back(
+                        done_computation->outputs[i].SubSlice(batch_start));
+                  }
                 }
               }
-              done_computation->callbacks[x](f_status, rets);
+              // Callbacks are populated for the last slice in the batch.
+              done_computation->callbacks[batch_limit - 1](f_status, rets);
             }
           });
         }
@@ -709,7 +797,8 @@ class DynamicFn : public FnType {
 
   bool DirectCall(ServerContext* server_ctx, gtl::ArraySlice<Tensor> args,
     std::function<void(Status, std::vector<Tensor>)> callback) {
-    Status status = verify_args(input_types_, input_shapes_, args);
+    Status status = verify_args(input_types_, input_shapes_,
+                                /*batching_dims_count=*/0, args);
     if (!status.ok()) {
       callback(status, {});
       return false;

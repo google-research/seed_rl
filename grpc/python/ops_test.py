@@ -23,13 +23,12 @@ from concurrent import futures
 import threading
 import time
 import uuid
+
 from absl.testing import parameterized
+import numpy as np
 from seed_rl.grpc.python import ops
-
 from six.moves import range
-
 import tensorflow as tf
-
 
 Some = collections.namedtuple('Some', 'a b')
 
@@ -518,7 +517,8 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     client = ops.Client(address)
     with self.assertRaisesRegex(
         tf.errors.InvalidArgumentError,
-        r'Expects arg\[0\] to have shape \[2\] but had shape \[\]'):
+        r'Expects arg\[0\] to have shape with 1 dimension\(s\), '
+        r'but had shape \[\]'):
       client.foo(1, 1)
 
   def test_shutdown_waiting_for_full_batch(self):
@@ -623,7 +623,8 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     client = ops.Client(address)
     with self.assertRaisesRegex(
         tf.errors.InvalidArgumentError,
-        r'Expects arg\[0\] to have shape \[3\] but had shape \[3,4\]'):
+        r'Expects arg\[0\] to have shape with suffix \[3\], '
+        r'but had shape \[3,4\]'):
       client.foo(tf.zeros([3, 4], tf.int32))  # Shape [3, 4], not [4, 3]
 
     server.shutdown()
@@ -770,6 +771,31 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     client = ops.Client(address)
     t = tf.constant([1, 2])
     self.assertAllEqual(t + 1, client.foo(t))
+    server.shutdown()
+
+  def test_client_side_batching(self):
+    address = self.get_unix_address()
+    server = ops.Server([address])
+
+    @tf.function(input_signature=[tf.TensorSpec([4], tf.int32)])
+    def foo(x):
+      return x + 1
+
+    server.bind(foo)
+    server.start()
+
+    def client(x):
+      client = ops.Client(address)
+      return client.foo(x)
+
+    # Both clients send batches of size 2 to the server, the server is expected
+    # to process it as a batch of size 4.
+    with futures.ThreadPoolExecutor(max_workers=2) as executor:
+      f1 = executor.submit(client, np.array([42, 43], np.int32))
+      f2 = executor.submit(client, np.array([142, 143], np.int32))
+      self.assertAllEqual(f1.result(), [43, 44])
+      self.assertAllEqual(f2.result(), [143, 144])
+
     server.shutdown()
 
 

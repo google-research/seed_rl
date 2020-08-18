@@ -469,10 +469,7 @@ def create_dataset(unroll_queue, replay_buffer, strategy, batch_size,
 
 
 def validate_config():
-  if FLAGS.inference_batch_size == -1:
-    FLAGS.inference_batch_size = max(1, FLAGS.num_actors // 2)
-  assert FLAGS.num_actors >= FLAGS.inference_batch_size, (
-      'Inference batch size is bigger than the number of actors.')
+  utils.validate_learner_config(FLAGS)
   assert FLAGS.n_steps >= 1, '--n_steps < 1 does not make sense.'
   assert FLAGS.num_actors > FLAGS.num_eval_actors, (
       'Total number of actors ({}) should be greater than number of actors '

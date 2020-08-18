@@ -316,10 +316,7 @@ def validate_config():
      )
   assert get_replay_insertion_batch_size(per_replica=True) >= 1, (
       'Replay ratio is bigger than batch size per replica.')
-  if FLAGS.inference_batch_size == -1:
-    FLAGS.inference_batch_size = max(1, FLAGS.num_actors // 2)
-  assert FLAGS.num_actors >= FLAGS.inference_batch_size, (
-      'Inference batch size is bigger than the number of actors.')
+  utils.validate_learner_config(FLAGS)
   if FLAGS.her_window_length:
     assert FLAGS.her_window_length >= FLAGS.unroll_length, (
         'The HER window can not be shorter than the unroll length.')

@@ -168,10 +168,7 @@ Unroll = collections.namedtuple(
 
 
 def validate_config():
-  if FLAGS.inference_batch_size == -1:
-    FLAGS.inference_batch_size = max(1, FLAGS.num_actors // 2)
-  assert FLAGS.num_actors >= FLAGS.inference_batch_size, (
-      'Inference batch size is bigger than the number of actors.')
+  utils.validate_learner_config(FLAGS)
 
 
 def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):

@@ -916,3 +916,12 @@ def tensor_spec_from_gym_space(space, name):
   return tf.TensorSpec((num_elements,), tf.float32, name)
 
 
+def validate_learner_config(config, num_hosts=1):
+  """Shared part of learner config validation."""
+  if config.inference_batch_size == -1:
+    config.inference_batch_size = max(1, config.num_actors // (2 * num_hosts))
+
+  assert config.num_actors >= config.inference_batch_size * num_hosts, (
+      'Inference batch size is bigger than the number of actors.')
+
+

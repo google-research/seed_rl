@@ -19,6 +19,7 @@ from absl import flags
 import gym
 from matplotlib import pyplot as plt
 import numpy as np
+import tensorflow as tf
 
 FLAGS = flags.FLAGS
 
@@ -184,3 +185,89 @@ class DiscretizeEnvWrapper(gym.Env):
 
   def render(self, *args, **kwargs):
     return self.env.render(*args, **kwargs)
+
+
+class BatchedEnvironment:
+  """A wrapper that batches several environment instances."""
+
+  def __init__(self, create_env_fn, batch_size, id_offset):
+    """Initialize the wrapper.
+
+    Args:
+      create_env_fn: A function to create environment instances.
+      batch_size: The number of environment instances to create.
+      id_offset: The offset for environment ids. Environments receive sequential
+        ids starting from this offset.
+    """
+    self._batch_size = batch_size
+    # Note: some environments require an argument to be of a native Python
+    # numeric type. If we create env_ids as a numpy array, its elements will
+    # be of type np.int32. So we create it as a plain Python array first.
+    env_ids = [id_offset + i for i in range(batch_size)]
+    self._envs = [create_env_fn(id) for id in env_ids]
+    self._env_ids = np.array(env_ids, np.int32)
+    self._obs = None
+
+  @property
+  def env_ids(self):
+    return self._env_ids
+
+  @property
+  def envs(self):
+    return self._envs
+
+  @property
+  def _mapped_obs(self):
+    """Maps observations to preserve the original structure.
+
+    This is needed to support environments that return structured observations.
+    For example, gym.GoalEnv has `observation`, `desired_goal`, and
+    `achieved_goal` elements in its observations. In this case the batched
+    observations would contain the same three elements batched by element.
+
+    Returns:
+      Mapped observations.
+    """
+    return tf.nest.map_structure(lambda *args: np.array(args), *self._obs)
+
+  def step(self, action_batch):
+    """Does one step for all batched environments sequentially."""
+    num_envs = self._batch_size
+    rewards = np.zeros(num_envs, np.float32)
+    dones = np.zeros(num_envs, np.bool)
+    infos = [None] * num_envs
+    for i in range(num_envs):
+      self._obs[i], rewards[i], dones[i], infos[i] = self._envs[i].step(
+          action_batch[i])
+    return self._mapped_obs, rewards, dones, infos
+
+  def reset(self):
+    """Reset all environments."""
+    observations = [env.reset() for env in self._envs]
+    self._obs = observations
+    return self._mapped_obs
+
+  def reset_if_done(self, done):
+    """Reset the environments for which 'done' is True.
+
+    Args:
+      done: An array that specifies which environments are 'done', meaning their
+        episode is terminated.
+
+    Returns:
+      Observations for all environments.
+    """
+    assert self._obs is not None, 'reset_if_done() called before reset()'
+    for i in range(len(self._envs)):
+      if done[i]:
+        self._obs[i] = self.envs[i].reset()
+
+    return self._mapped_obs
+
+  def render(self, mode='human', **kwargs):
+    # Render only the first one
+    self._envs[0].render(mode, **kwargs)
+
+  def close(self):
+    for env in self._envs:
+      env.close()

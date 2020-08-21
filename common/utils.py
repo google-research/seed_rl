@@ -918,8 +918,15 @@ def tensor_spec_from_gym_space(space, name):
 
 def validate_learner_config(config, num_hosts=1):
   """Shared part of learner config validation."""
+  if config.envs_per_actor > 1:
+
+    config.num_actors = config.num_actors * config.envs_per_actor
   if config.inference_batch_size == -1:
     config.inference_batch_size = max(1, config.num_actors // (2 * num_hosts))
+  assert config.inference_batch_size % config.envs_per_actor == 0, (
+      'Learner-side batch size (=%d) must be exact multiple of the '
+      'actor-side batch size (=%d).' %
+      (config.inference_batch_size, config.envs_per_actor))
 
   assert config.num_actors >= config.inference_batch_size * num_hosts, (
       'Inference batch size is bigger than the number of actors.')

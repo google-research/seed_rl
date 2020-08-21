@@ -36,5 +36,7 @@ flags.DEFINE_integer('num_actors', 4,
 flags.DEFINE_integer('num_eval_actors', 0,
                      'Number of actors that will be used for eval (for agents '
                      'that support eval actors). Must be less than num_actors.')
+flags.DEFINE_integer('envs_per_actor', 1,
+                     'Number of environments to run in a batch by one actor.')
 
 flags.DEFINE_integer('num_action_repeats', 1, 'Number of action repeats.')

@@ -49,7 +49,7 @@ def actor_loop(create_env_fn):
     create_env_fn: Callable (taking the task ID as argument) that must return a
       newly created environment.
   """
-  env_batch_size = FLAGS.envs_per_actor
+  env_batch_size = FLAGS.env_batch_size
   logging.info('Starting actor loop. Task: %r. Environment batch size: %r',
                FLAGS.task, env_batch_size)
   is_rendering_enabled = FLAGS.render and FLAGS.task == 0

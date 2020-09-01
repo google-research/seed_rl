@@ -40,4 +40,7 @@ flags.DEFINE_integer(
     'env_batch_size', 1,
     'How many environments to operate on together in a batch.'
 )
+flags.DEFINE_integer('num_envs', 0,
+                     'Total number of environments in all actors. '
+                     'When set to 0 it defaults to num_actors.')
 flags.DEFINE_integer('num_action_repeats', 1, 'Number of action repeats.')

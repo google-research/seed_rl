@@ -918,6 +918,8 @@ def tensor_spec_from_gym_space(space, name):
 
 def validate_learner_config(config, num_hosts=1):
   """Shared part of learner config validation."""
+  if config.num_envs == 0:
+    config.num_envs = config.num_actors
   if config.env_batch_size > 1:
 
     config.num_actors = config.num_actors * config.env_batch_size

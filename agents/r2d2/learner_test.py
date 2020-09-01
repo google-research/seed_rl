@@ -39,9 +39,9 @@ class LearnerTest(tf.test.TestCase):
     new_action = tf.function(learner.apply_epsilon_greedy)(
         action,
         # We always pick the first actor which has an epsilon of 0.4
-        actor_ids=tf.zeros([num_actors], dtype=tf.int32),
-        num_training_actors=10,
-        num_eval_actors=0,
+        env_ids=tf.zeros([num_actors], dtype=tf.int32),
+        num_training_envs=10,
+        num_eval_envs=0,
         eval_epsilon=0,
         num_actions=200)
     num_random_actions = tf.reduce_sum(
@@ -60,8 +60,8 @@ class LearnerTest(tf.test.TestCase):
   def test_get_actors_epsilon(self):
     epsilons = tf.function(learner.get_actors_epsilon)(
         tf.range(20, dtype=tf.int32),
-        num_training_actors=10,
-        num_eval_actors=10,
+        num_training_envs=10,
+        num_eval_envs=10,
         eval_epsilon=1e-3)
     # Eval epsilons.
     self.assertAllClose(epsilons[10:], [1e-3] * 10)

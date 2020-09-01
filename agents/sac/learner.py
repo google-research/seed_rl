@@ -487,14 +487,14 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   store = utils.UnrollStore(
       FLAGS.num_actors, FLAGS.her_window_length or FLAGS.unroll_length,
       (action_specs, env_output_specs, action_specs))
-  actor_run_ids = utils.Aggregator(FLAGS.num_actors,
-                                   tf.TensorSpec([], tf.int64, 'run_ids'))
+  env_run_ids = utils.Aggregator(FLAGS.num_actors,
+                                 tf.TensorSpec([], tf.int64, 'run_ids'))
   info_specs = (
       tf.TensorSpec([], tf.int64, 'episode_num_frames'),
       tf.TensorSpec([], tf.float32, 'episode_returns'),
       tf.TensorSpec([], tf.float32, 'episode_raw_returns'),
   )
-  actor_infos = utils.Aggregator(FLAGS.num_actors, info_specs, 'actor_infos')
+  env_infos = utils.Aggregator(FLAGS.num_actors, info_specs, 'env_infos')
 
   # First agent state in an unroll.
   first_agent_states = utils.Aggregator(
@@ -529,45 +529,45 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
 
   inference_iteration = tf.Variable(-1, dtype=tf.int64)
   inference_specs = (
-      tf.TensorSpec([], tf.int32, 'actor_id'),
+      tf.TensorSpec([], tf.int32, 'env_id'),
       tf.TensorSpec([], tf.int64, 'run_id'),
       env_output_specs,
       tf.TensorSpec([], tf.float32, 'raw_reward'),
   )
   inference_specs = tf.nest.map_structure(add_batch_size, inference_specs)
   @tf.function(input_signature=inference_specs)
-  def inference(actor_ids, run_ids, env_outputs, raw_rewards):
+  def inference(env_ids, run_ids, env_outputs, raw_rewards):
     # Reset the actors that had their first run or crashed.
-    previous_run_ids = actor_run_ids.read(actor_ids)
-    actor_run_ids.replace(actor_ids, run_ids)
+    previous_run_ids = env_run_ids.read(env_ids)
+    env_run_ids.replace(env_ids, run_ids)
     reset_indices = tf.where(tf.not_equal(previous_run_ids, run_ids))[:, 0]
-    actors_needing_reset = tf.gather(actor_ids, reset_indices)
-    if tf.not_equal(tf.shape(actors_needing_reset)[0], 0):
-      tf.print('Actor ids needing reset:', actors_needing_reset)
-    actor_infos.reset(actors_needing_reset)
-    store.reset(actors_needing_reset)
+    envs_needing_reset = tf.gather(env_ids, reset_indices)
+    if tf.not_equal(tf.shape(envs_needing_reset)[0], 0):
+      tf.print('Actor ids needing reset:', envs_needing_reset)
+    env_infos.reset(envs_needing_reset)
+    store.reset(envs_needing_reset)
     initial_agent_states = agent.initial_state(
-        tf.shape(actors_needing_reset)[0])
-    first_agent_states.replace(actors_needing_reset, initial_agent_states)
-    agent_states.replace(actors_needing_reset, initial_agent_states)
-    actions.reset(actors_needing_reset)
+        tf.shape(envs_needing_reset)[0])
+    first_agent_states.replace(envs_needing_reset, initial_agent_states)
+    agent_states.replace(envs_needing_reset, initial_agent_states)
+    actions.reset(envs_needing_reset)
 
     tf.debugging.assert_non_positive(
         tf.cast(env_outputs.abandoned, tf.int32),
         'Abandoned done states are not supported in SAC.')
 
     # Update steps and return.
-    actor_infos.add(actor_ids, (0, env_outputs.reward, raw_rewards))
-    done_ids = tf.gather(actor_ids, tf.where(env_outputs.done)[:, 0])
-    info_queue.enqueue_many(actor_infos.read(done_ids))
-    actor_infos.reset(done_ids)
-    actor_infos.add(actor_ids, (FLAGS.num_action_repeats, 0., 0.))
+    env_infos.add(env_ids, (0, env_outputs.reward, raw_rewards))
+    done_ids = tf.gather(env_ids, tf.where(env_outputs.done)[:, 0])
+    info_queue.enqueue_many(env_infos.read(done_ids))
+    env_infos.reset(done_ids)
+    env_infos.add(env_ids, (FLAGS.num_action_repeats, 0., 0.))
 
     # Inference.
     prev_actions = parametric_action_distribution.postprocess(
-        actions.read(actor_ids))
+        actions.read(env_ids))
     input_ = encode((prev_actions, env_outputs))
-    prev_agent_states = agent_states.read(actor_ids)
+    prev_agent_states = agent_states.read(env_ids)
     def make_inference_fn(inference_device):
       def device_specific_inference_fn():
         with tf.device(inference_device):
@@ -591,15 +591,15 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     # Append the latest outputs to the unroll and insert completed unrolls in
     # queue.
     completed_ids, unrolls = store.append(
-        actor_ids, (prev_actions, env_outputs, agent_actions))
+        env_ids, (prev_actions, env_outputs, agent_actions))
     unrolls = Unroll(first_agent_states.read(completed_ids), *unrolls)
     unroll_queue.enqueue_many(unrolls)
     first_agent_states.replace(completed_ids,
                                agent_states.read(completed_ids))
 
     # Update current state.
-    agent_states.replace(actor_ids, curr_agent_states)
-    actions.replace(actor_ids, agent_actions)
+    agent_states.replace(env_ids, curr_agent_states)
+    actions.replace(env_ids, agent_actions)
 
     # Return environment actions to actors.
     return parametric_action_distribution.postprocess(agent_actions)

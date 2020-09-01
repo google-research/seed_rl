@@ -64,10 +64,10 @@ def init_learner(num_training_tpus):
 
 
 class UnrollStore(tf.Module):
-  """Utility module for combining individual actor steps into unrolls."""
+  """Utility module for combining individual environment steps into unrolls."""
 
   def __init__(self,
-               num_actors,
+               num_envs,
                unroll_length,
                timestep_specs,
                num_overlapping_steps=0,
@@ -78,17 +78,17 @@ class UnrollStore(tf.Module):
 
       def create_unroll_variable(spec):
         z = tf.zeros(
-            [num_actors, self._full_length] + spec.shape.dims, dtype=spec.dtype)
+            [num_envs, self._full_length] + spec.shape.dims, dtype=spec.dtype)
         return tf.Variable(z, trainable=False, name=spec.name)
 
       self._unroll_length = unroll_length
       self._num_overlapping_steps = num_overlapping_steps
       self._state = tf.nest.map_structure(create_unroll_variable,
                                           timestep_specs)
-      # For each actor, the index into the actor dimension of the tensors in
-      # self._state where we should add the next element.
+      # For each environment, the index into the environment dimension of the
+      # tensors in self._state where we should add the next element.
       self._index = tf.Variable(
-          tf.fill([num_actors], tf.constant(num_overlapping_steps, tf.int32)),
+          tf.fill([num_envs], tf.constant(num_overlapping_steps, tf.int32)),
           trainable=False,
           name='index')
 
@@ -99,107 +99,108 @@ class UnrollStore(tf.Module):
 
   @tf.function
   @tf.Module.with_name_scope
-  def append(self, actor_ids, values):
+  def append(self, env_ids, values):
     """Appends values and returns completed unrolls.
 
     Args:
-      actor_ids: 1D tensor with the list of actor IDs for which we append data.
+      env_ids: 1D tensor with the list of environment IDs for which we append
+        data.
         There must not be duplicates.
-      values: Values to add for each actor. This is a structure (in the tf.nest
-        sense) of tensors following "timestep_specs", with a batch front
-        dimension which must be equal to the length of 'actor_ids'.
+      values: Values to add for each environment. This is a structure
+        (in the tf.nest sense) of tensors following "timestep_specs", with a
+        batch front dimension which must be equal to the length of 'env_ids'.
 
     Returns:
       A pair of:
-        - 1D tensor of the actor IDs of the completed unrolls.
+        - 1D tensor of the environment IDs of the completed unrolls.
         - Completed unrolls. This is a structure of tensors following
           'timestep_specs', with added front dimensions: [num_completed_unrolls,
           num_overlapping_steps + unroll_length + 1].
     """
     tf.debugging.assert_equal(
-        tf.shape(actor_ids),
-        tf.shape(tf.unique(actor_ids)[0]),
-        message='Duplicate actor ids')
+        tf.shape(env_ids),
+        tf.shape(tf.unique(env_ids)[0]),
+        message='Duplicate environment ids')
     
     tf.nest.map_structure(
         lambda s: tf.debugging.assert_equal(
-            tf.shape(actor_ids)[0],
+            tf.shape(env_ids)[0],
             tf.shape(s)[0],
-            message='Batch dimension must be same size as number of actors.'),
+            message='Batch dimension must equal the number of environments.'),
         values)
     
 
-    curr_indices = self._index.sparse_read(actor_ids)
-    unroll_indices = tf.stack([actor_ids, curr_indices], axis=-1)
+    curr_indices = self._index.sparse_read(env_ids)
+    unroll_indices = tf.stack([env_ids, curr_indices], axis=-1)
     for s, v in zip(tf.nest.flatten(self._state), tf.nest.flatten(values)):
       s.scatter_nd_update(unroll_indices, v)
 
     # Intentionally not protecting against out-of-bounds to make it possible to
     # detect completed unrolls.
-    self._index.scatter_add(tf.IndexedSlices(1, actor_ids))
+    self._index.scatter_add(tf.IndexedSlices(1, env_ids))
 
-    return self._complete_unrolls(actor_ids)
+    return self._complete_unrolls(env_ids)
 
   @tf.function
   @tf.Module.with_name_scope
-  def reset(self, actor_ids):
+  def reset(self, env_ids):
     """Resets state.
 
-    Note, this is only intended to be called when actors need to be reset after
-    preemptions. Not at episode boundaries.
+    Note, this is only intended to be called when environments need to be reset
+    after preemptions. Not at episode boundaries.
 
     Args:
-      actor_ids: The actors that need to have their state reset.
+      env_ids: The environments that need to have their state reset.
     """
     self._index.scatter_update(
-        tf.IndexedSlices(self._num_overlapping_steps, actor_ids))
+        tf.IndexedSlices(self._num_overlapping_steps, env_ids))
 
     # The following code is the equivalent of:
-    # s[actor_ids, :j] = 0
+    # s[env_ids, :j] = 0
     j = self._num_overlapping_steps
-    repeated_actor_ids = tf.reshape(
-        tf.tile(tf.expand_dims(tf.cast(actor_ids, tf.int64), -1), [1, j]), [-1])
+    repeated_env_ids = tf.reshape(
+        tf.tile(tf.expand_dims(tf.cast(env_ids, tf.int64), -1), [1, j]), [-1])
 
     repeated_range = tf.tile(tf.range(j, dtype=tf.int64),
-                             [tf.shape(actor_ids)[0]])
-    indices = tf.stack([repeated_actor_ids, repeated_range], axis=-1)
+                             [tf.shape(env_ids)[0]])
+    indices = tf.stack([repeated_env_ids, repeated_range], axis=-1)
 
     for s in tf.nest.flatten(self._state):
-      z = tf.zeros(tf.concat([tf.shape(repeated_actor_ids),
+      z = tf.zeros(tf.concat([tf.shape(repeated_env_ids),
                               s.shape[2:]], axis=0), s.dtype)
       s.scatter_nd_update(indices, z)
 
-  def _complete_unrolls(self, actor_ids):
-    # Actor with unrolls that are now complete and should be returned.
-    actor_indices = self._index.sparse_read(actor_ids)
-    actor_ids = tf.gather(
-        actor_ids,
-        tf.where(tf.equal(actor_indices, self._full_length))[:, 0])
-    actor_ids = tf.cast(actor_ids, tf.int64)
-    unrolls = tf.nest.map_structure(lambda s: s.sparse_read(actor_ids),
+  def _complete_unrolls(self, env_ids):
+    # Environment with unrolls that are now complete and should be returned.
+    env_indices = self._index.sparse_read(env_ids)
+    env_ids = tf.gather(
+        env_ids,
+        tf.where(tf.equal(env_indices, self._full_length))[:, 0])
+    env_ids = tf.cast(env_ids, tf.int64)
+    unrolls = tf.nest.map_structure(lambda s: s.sparse_read(env_ids),
                                     self._state)
 
     # Store last transitions as the first in the next unroll.
     # The following code is the equivalent of:
-    # s[actor_ids, :j] = s[actor_ids, -j:]
+    # s[env_ids, :j] = s[env_ids, -j:]
     j = self._num_overlapping_steps + 1
     repeated_start_range = tf.tile(tf.range(j, dtype=tf.int64),
-                                   [tf.shape(actor_ids)[0]])
+                                   [tf.shape(env_ids)[0]])
     repeated_end_range = tf.tile(
         tf.range(self._full_length - j, self._full_length, dtype=tf.int64),
-        [tf.shape(actor_ids)[0]])
-    repeated_actor_ids = tf.reshape(
-        tf.tile(tf.expand_dims(actor_ids, -1), [1, j]), [-1])
-    start_indices = tf.stack([repeated_actor_ids, repeated_start_range], -1)
-    end_indices = tf.stack([repeated_actor_ids, repeated_end_range], -1)
+        [tf.shape(env_ids)[0]])
+    repeated_env_ids = tf.reshape(
+        tf.tile(tf.expand_dims(env_ids, -1), [1, j]), [-1])
+    start_indices = tf.stack([repeated_env_ids, repeated_start_range], -1)
+    end_indices = tf.stack([repeated_env_ids, repeated_end_range], -1)
 
     for s in tf.nest.flatten(self._state):
       s.scatter_nd_update(start_indices, s.gather_nd(end_indices))
 
     self._index.scatter_update(
-        tf.IndexedSlices(1 + self._num_overlapping_steps, actor_ids))
+        tf.IndexedSlices(1 + self._num_overlapping_steps, env_ids))
 
-    return actor_ids, unrolls
+    return env_ids, unrolls
 
 
 class PrioritizedReplay(tf.Module):
@@ -404,79 +405,79 @@ class HindsightExperienceReplay(PrioritizedReplay):
 
 
 class Aggregator(tf.Module):
-  """Utility module for keeping state and statistics for individual actors."""
+  """Utility module for keeping state for individual environments."""
 
-  def __init__(self, num_actors, specs, name='Aggregator'):
+  def __init__(self, num_envs, specs, name='Aggregator'):
     """Inits an Aggregator.
 
     Args:
-      num_actors: int, number of actors.
+      num_envs: int, number of environments.
       specs: Structure (as defined by tf.nest) of tf.TensorSpecs that will be
-        stored for each actor.
+        stored for each environment.
       name: Name of the scope for the operations.
     """
     super(Aggregator, self).__init__(name=name)
     def create_variable(spec):
-      z = tf.zeros([num_actors] + spec.shape.dims, dtype=spec.dtype)
+      z = tf.zeros([num_envs] + spec.shape.dims, dtype=spec.dtype)
       return tf.Variable(z, trainable=False, name=spec.name)
 
     self._state = tf.nest.map_structure(create_variable, specs)
 
   @tf.Module.with_name_scope
-  def reset(self, actor_ids):
-    """Fills the tensors for the given actors with zeros."""
+  def reset(self, env_ids):
+    """Fills the tensors for the given environments with zeros."""
     with tf.name_scope('Aggregator_reset'):
       for s in tf.nest.flatten(self._state):
-        s.scatter_update(tf.IndexedSlices(0, actor_ids))
+        s.scatter_update(tf.IndexedSlices(0, env_ids))
 
   @tf.Module.with_name_scope
-  def add(self, actor_ids, values):
-    """In-place adds values to the state associated to the given actors.
+  def add(self, env_ids, values):
+    """In-place adds values to the state associated to the given environments.
 
     Args:
-      actor_ids: 1D tensor with the list of actor IDs we want to add values to.
+      env_ids: 1D tensor with the environment IDs we want to add values to.
       values: A structure of tensors following the input spec, with an added
-        first dimension that must either have the same size as 'actor_ids', or
-        should not exist (in which case, the value is broadcasted to all actor
-        ids).
+        first dimension that must either have the same size as 'env_ids', or
+        should not exist (in which case, the value is broadcasted to all
+        environment ids).
     """
     tf.nest.assert_same_structure(values, self._state)
     for s, v in zip(tf.nest.flatten(self._state), tf.nest.flatten(values)):
-      s.scatter_add(tf.IndexedSlices(v, actor_ids))
+      s.scatter_add(tf.IndexedSlices(v, env_ids))
 
   @tf.Module.with_name_scope
-  def read(self, actor_ids):
-    """Reads the values corresponding to a list of actors.
+  def read(self, env_ids):
+    """Reads the values corresponding to a list of environments.
 
     Args:
-      actor_ids: 1D tensor with the list of actor IDs we want to read.
+      env_ids: 1D tensor with the list of environment IDs we want to read.
 
     Returns:
       A structure of tensors with the same shapes as the input specs. A
       dimension is added in front of each tensor, with size equal to the number
-      of actor_ids provided.
+      of env_ids provided.
     """
-    return tf.nest.map_structure(lambda s: s.sparse_read(actor_ids),
+    return tf.nest.map_structure(lambda s: s.sparse_read(env_ids),
                                  self._state)
 
   @tf.Module.with_name_scope
-  def replace(self, actor_ids, values):
-    """Replaces the state associated to the given actors.
+  def replace(self, env_ids, values):
+    """Replaces the state associated to the given environments.
 
     Args:
-      actor_ids: 1D tensor with the list of actor IDs.
+      env_ids: 1D tensor with the list of environment IDs.
       values: A structure of tensors following the input spec, with an added
-        first dimension that must either have the same size as 'actor_ids', or
-        should not exist (in which case, the value is broadcasted to all actor
-        ids).
+        first dimension that must either have the same size as 'env_ids', or
+        should not exist (in which case, the value is broadcasted to all
+        environment ids).
     """
     tf.debugging.assert_equal(
-        tf.shape(actor_ids),
-        tf.shape(tf.unique(actor_ids)[0]),
-        message=f'Duplicate actor ids in Aggregator: {self.name}')
+        tf.shape(env_ids),
+        tf.shape(tf.unique(env_ids)[0]),
+        message=f'Duplicate environment ids in Aggregator: {self.name}')
     tf.nest.assert_same_structure(values, self._state)
     for s, v in zip(tf.nest.flatten(self._state), tf.nest.flatten(values)):
-      s.scatter_update(tf.IndexedSlices(v, actor_ids))
+      s.scatter_update(tf.IndexedSlices(v, env_ids))
 
 
 class ProgressLogger(object):
@@ -918,8 +919,6 @@ def tensor_spec_from_gym_space(space, name):
 
 def validate_learner_config(config, num_hosts=1):
   """Shared part of learner config validation."""
-  if config.num_envs == 0:
-    config.num_envs = config.num_actors
   if config.env_batch_size > 1:
 
     config.num_actors = config.num_actors * config.env_batch_size
@@ -929,8 +928,8 @@ def validate_learner_config(config, num_hosts=1):
       'Learner-side batch size (=%d) must be exact multiple of the '
       'actor-side batch size (=%d).' %
       (config.inference_batch_size, config.env_batch_size))
-
-  assert config.num_actors >= config.inference_batch_size * num_hosts, (
-      'Inference batch size is bigger than the number of actors.')
+  config.num_envs = config.num_actors
+  assert config.num_envs >= config.inference_batch_size * num_hosts, (
+      'Inference batch size is bigger than the number of environments.')
 
 

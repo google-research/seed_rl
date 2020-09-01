@@ -33,7 +33,7 @@ flags.DEFINE_enum(
 
 flags.DEFINE_integer('num_actors', 4,
                      'Total number of actors (training and eval actors).')
-flags.DEFINE_integer('num_eval_actors', 0,
+flags.DEFINE_integer('num_eval_envs', 0,
                      'Number of actors that will be used for eval (for agents '
                      'that support eval actors). Must be less than num_actors.')
 flags.DEFINE_integer(

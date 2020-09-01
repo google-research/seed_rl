@@ -27,9 +27,7 @@ class UnrollStoreTest(tf.test.TestCase):
 
   def test_duplicate_actor_id(self):
     store = utils.UnrollStore(
-        num_actors=2,
-        unroll_length=3,
-        timestep_specs=tf.TensorSpec([], tf.int32))
+        num_envs=2, unroll_length=3, timestep_specs=tf.TensorSpec([], tf.int32))
     with self.assertRaises(tf.errors.InvalidArgumentError):
       store.append(
           tf.constant([2, 2], dtype=tf.int32),
@@ -37,9 +35,7 @@ class UnrollStoreTest(tf.test.TestCase):
 
   def test_full(self):
     store = utils.UnrollStore(
-        num_actors=4,
-        unroll_length=3,
-        timestep_specs=tf.TensorSpec([], tf.int32))
+        num_envs=4, unroll_length=3, timestep_specs=tf.TensorSpec([], tf.int32))
 
     def gen():
       yield False, 0, 10
@@ -75,45 +71,45 @@ class UnrollStoreTest(tf.test.TestCase):
     dataset = dataset.batch(3, drop_remainder=True)
     i = iter(dataset)
 
-    should_reset, actor_ids, values = next(i)
-    store.reset(actor_ids[should_reset])
-    completed_ids, unrolls = store.append(actor_ids, values)
+    should_reset, env_ids, values = next(i)
+    store.reset(env_ids[should_reset])
+    completed_ids, unrolls = store.append(env_ids, values)
     self.assertAllEqual(tf.zeros([0]), completed_ids)
     self.assertAllEqual(tf.zeros([0, 4]), unrolls)
 
-    should_reset, actor_ids, values = next(i)
-    store.reset(actor_ids[should_reset])
-    completed_ids, unrolls = store.append(actor_ids, values)
+    should_reset, env_ids, values = next(i)
+    store.reset(env_ids[should_reset])
+    completed_ids, unrolls = store.append(env_ids, values)
     self.assertAllEqual(tf.zeros([0]), completed_ids)
     self.assertAllEqual(tf.zeros([0, 4]), unrolls)
 
-    should_reset, actor_ids, values = next(i)
-    store.reset(actor_ids[should_reset])
-    completed_ids, unrolls = store.append(actor_ids, values)
+    should_reset, env_ids, values = next(i)
+    store.reset(env_ids[should_reset])
+    completed_ids, unrolls = store.append(env_ids, values)
     self.assertAllEqual(tf.zeros([0]), completed_ids)
     self.assertAllEqual(tf.zeros([0, 4]), unrolls)
 
-    should_reset, actor_ids, values = next(i)
-    store.reset(actor_ids[should_reset])
-    completed_ids, unrolls = store.append(actor_ids, values)
+    should_reset, env_ids, values = next(i)
+    store.reset(env_ids[should_reset])
+    completed_ids, unrolls = store.append(env_ids, values)
     self.assertAllEqual(tf.constant([0]), completed_ids)
     self.assertAllEqual(tf.constant([[10, 11, 12, 13]]), unrolls)
 
-    should_reset, actor_ids, values = next(i)
-    store.reset(actor_ids[should_reset])
-    completed_ids, unrolls = store.append(actor_ids, values)
+    should_reset, env_ids, values = next(i)
+    store.reset(env_ids[should_reset])
+    completed_ids, unrolls = store.append(env_ids, values)
     self.assertAllEqual(tf.zeros([0]), completed_ids)
     self.assertAllEqual(tf.zeros([0, 4]), unrolls)
 
-    should_reset, actor_ids, values = next(i)
-    store.reset(actor_ids[should_reset])
-    completed_ids, unrolls = store.append(actor_ids, values)
+    should_reset, env_ids, values = next(i)
+    store.reset(env_ids[should_reset])
+    completed_ids, unrolls = store.append(env_ids, values)
     self.assertAllEqual(tf.zeros([0]), completed_ids)
     self.assertAllEqual(tf.zeros([0, 4]), unrolls)
 
-    should_reset, actor_ids, values = next(i)
-    store.reset(actor_ids[should_reset])
-    completed_ids, unrolls = store.append(actor_ids, values)
+    should_reset, env_ids, values = next(i)
+    store.reset(env_ids[should_reset])
+    completed_ids, unrolls = store.append(env_ids, values)
     self.assertAllEqual(tf.constant([0, 1, 2]), completed_ids)
     self.assertAllEqual(
         tf.constant([[13, 14, 15, 16], [20, 21, 22, 23], [33, 34, 35, 36]]),
@@ -121,37 +117,36 @@ class UnrollStoreTest(tf.test.TestCase):
 
   def test_structure(self):
     named_tuple = collections.namedtuple('named_tuple', 'x y')
-    num_actors = 2
+    num_envs = 2
     unroll_length = 10
     store = utils.UnrollStore(
-        num_actors=num_actors,
+        num_envs=num_envs,
         unroll_length=unroll_length,
         timestep_specs=named_tuple(
             x=tf.TensorSpec([], tf.int32), y=tf.TensorSpec([], tf.int32)))
     for _ in range(unroll_length):
       completed_ids, unrolls = store.append(
-          tf.range(num_actors),
+          tf.range(num_envs),
           named_tuple(
-              tf.zeros([num_actors], tf.int32), tf.zeros([num_actors],
-                                                         tf.int32)))
+              tf.zeros([num_envs], tf.int32), tf.zeros([num_envs], tf.int32)))
       self.assertAllEqual(tf.constant(()), completed_ids)
       self.assertAllEqual(
           named_tuple(
               tf.zeros([0, unroll_length + 1]),
               tf.zeros([0, unroll_length + 1])), unrolls)
     completed_ids, unrolls = store.append(
-        tf.range(num_actors),
+        tf.range(num_envs),
         named_tuple(
-            tf.zeros([num_actors], tf.int32), tf.zeros([num_actors], tf.int32)))
-    self.assertAllEqual(tf.range(num_actors), completed_ids)
+            tf.zeros([num_envs], tf.int32), tf.zeros([num_envs], tf.int32)))
+    self.assertAllEqual(tf.range(num_envs), completed_ids)
     self.assertAllEqual(
         named_tuple(
-            tf.zeros([num_actors, unroll_length + 1]),
-            tf.zeros([num_actors, unroll_length + 1])), unrolls)
+            tf.zeros([num_envs, unroll_length + 1]),
+            tf.zeros([num_envs, unroll_length + 1])), unrolls)
 
   def test_overlap_2(self):
     store = utils.UnrollStore(
-        num_actors=2,
+        num_envs=2,
         unroll_length=2,
         timestep_specs=tf.TensorSpec([], tf.int32),
         num_overlapping_steps=2)
@@ -186,48 +181,48 @@ class UnrollStoreTest(tf.test.TestCase):
     dataset = dataset.batch(2, drop_remainder=True)
     i = iter(dataset)
 
-    should_reset, actor_ids, values = next(i)
-    store.reset(actor_ids[should_reset])
-    completed_ids, unrolls = store.append(actor_ids, values)
+    should_reset, env_ids, values = next(i)
+    store.reset(env_ids[should_reset])
+    completed_ids, unrolls = store.append(env_ids, values)
     self.assertAllEqual(tf.zeros([0]), completed_ids)
 
-    should_reset, actor_ids, values = next(i)
-    store.reset(actor_ids[should_reset])
-    completed_ids, unrolls = store.append(actor_ids, values)
+    should_reset, env_ids, values = next(i)
+    store.reset(env_ids[should_reset])
+    completed_ids, unrolls = store.append(env_ids, values)
     self.assertAllEqual(tf.zeros([0]), completed_ids)
 
-    should_reset, actor_ids, values = next(i)
-    store.reset(actor_ids[should_reset])
-    completed_ids, unrolls = store.append(actor_ids, values)
+    should_reset, env_ids, values = next(i)
+    store.reset(env_ids[should_reset])
+    completed_ids, unrolls = store.append(env_ids, values)
     self.assertAllEqual(tf.constant([0]), completed_ids)
     self.assertAllEqual(tf.constant([[0, 0, 10, 11, 12]]), unrolls)
 
-    should_reset, actor_ids, values = next(i)
-    store.reset(actor_ids[should_reset])
-    completed_ids, unrolls = store.append(actor_ids, values)
+    should_reset, env_ids, values = next(i)
+    store.reset(env_ids[should_reset])
+    completed_ids, unrolls = store.append(env_ids, values)
     self.assertAllEqual(tf.zeros([0]), completed_ids)
 
-    should_reset, actor_ids, values = next(i)
-    store.reset(actor_ids[should_reset])
-    completed_ids, unrolls = store.append(actor_ids, values)
+    should_reset, env_ids, values = next(i)
+    store.reset(env_ids[should_reset])
+    completed_ids, unrolls = store.append(env_ids, values)
     self.assertAllEqual(tf.constant([0, 1]), completed_ids)
     self.assertAllEqual(
         tf.constant([[10, 11, 12, 13, 14], [0, 0, 22, 23, 24]]), unrolls)
 
-    should_reset, actor_ids, values = next(i)
-    store.reset(actor_ids[should_reset])
-    completed_ids, unrolls = store.append(actor_ids, values)
+    should_reset, env_ids, values = next(i)
+    store.reset(env_ids[should_reset])
+    completed_ids, unrolls = store.append(env_ids, values)
     self.assertAllEqual(tf.zeros([0]), completed_ids)
 
-    should_reset, actor_ids, values = next(i)
-    store.reset(actor_ids[should_reset])
-    completed_ids, unrolls = store.append(actor_ids, values)
+    should_reset, env_ids, values = next(i)
+    store.reset(env_ids[should_reset])
+    completed_ids, unrolls = store.append(env_ids, values)
     self.assertAllEqual(tf.constant([1]), completed_ids)
     self.assertAllEqual(tf.constant([[22, 23, 24, 25, 26]]), unrolls)
 
-    should_reset, actor_ids, values = next(i)
-    store.reset(actor_ids[should_reset])
-    completed_ids, unrolls = store.append(actor_ids, values)
+    should_reset, env_ids, values = next(i)
+    store.reset(env_ids[should_reset])
+    completed_ids, unrolls = store.append(env_ids, values)
     self.assertAllEqual(tf.constant([0]), completed_ids)
     self.assertAllEqual(tf.constant([[0, 0, 15, 16, 17]]), unrolls)
 
@@ -235,7 +230,7 @@ class UnrollStoreTest(tf.test.TestCase):
 class AggregatorTest(tf.test.TestCase):
 
   def test_full(self):
-    agg = utils.Aggregator(num_actors=4, specs=tf.TensorSpec([], tf.int32))
+    agg = utils.Aggregator(num_envs=4, specs=tf.TensorSpec([], tf.int32))
 
     self.assertAllEqual([0, 0, 0, 0], agg.read([0, 1, 2, 3]))
     agg.add([0, 1], tf.convert_to_tensor([42, 43]))

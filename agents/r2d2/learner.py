@@ -106,7 +106,7 @@ EpisodeInfo = collections.namedtuple(
     # num_frames: length of the episode in number of frames.
     # returns: Sum of undiscounted rewards experienced in the episode.
     # raw_returns: Sum of raw rewards experienced in the episode.
-    # env_ids: ID of the actor that generated this episode.
+    # env_ids: ID of the environment that generated this episode.
     'num_frames returns raw_returns env_ids')
 
 
@@ -118,29 +118,28 @@ def get_replay_insertion_batch_size(per_replica=False):
 
 
 def get_num_training_envs():
-  return FLAGS.num_actors - FLAGS.num_eval_envs
+  return FLAGS.num_envs - FLAGS.num_eval_envs
 
 
-def is_training_env(actor_id):
-  """Training actor IDs are in range [0, num_training_envs)."""
-  return actor_id < get_num_training_envs()
+def is_training_env(env_id):
+  """Training environment IDs are in range [0, num_training_envs)."""
+  return env_id < get_num_training_envs()
 
 
-def get_actors_epsilon(env_ids, num_training_envs, num_eval_envs,
-                       eval_epsilon):
-  """Per-actor epsilon as in Apex and R2D2.
+def get_envs_epsilon(env_ids, num_training_envs, num_eval_envs, eval_epsilon):
+  """Per-environment epsilon as in Apex and R2D2.
 
   Args:
-    env_ids: <int32>[inference_batch_size], the actor task IDs (in range
+    env_ids: <int32>[inference_batch_size], the environment task IDs (in range
       [0, num_training_envs+num_eval_envs)).
-    num_training_envs: Number of training actors. Training actors should have
-      IDs in [0, num_training_envs).
-    num_eval_envs: Number of evaluation actors. Eval actors should have IDs in
-      [num_training_envs, num_training_envs + num_eval_envs).
-    eval_epsilon: Epsilon used for eval actors.
+    num_training_envs: Number of training environments. Training environments
+      should have IDs in [0, num_training_envs).
+    num_eval_envs: Number of evaluation environments. Eval environments should
+      have IDs in [num_training_envs, num_training_envs + num_eval_envs).
+    eval_epsilon: Epsilon used for eval environments.
 
   Returns:
-    A 1D float32 tensor with one epsilon for each input actor ID.
+    A 1D float32 tensor with one epsilon for each input environment ID.
   """
   # <float32>[num_training_envs + num_eval_envs]
   epsilons = tf.concat(
@@ -155,22 +154,23 @@ def apply_epsilon_greedy(actions, env_ids, num_training_envs,
   """Epsilon-greedy: randomly replace actions with given probability.
 
   Args:
-    actions: <int32>[batch_size] tensor with one action per actor.
-    env_ids: <int32>[inference_batch_size], the actor task IDs (in range
-      [0, num_actors)).
-    num_training_envs: Number of training actors.
-    num_eval_envs: Number of eval actors.
-    eval_epsilon: Epsilon used for eval actors.
+    actions: <int32>[batch_size] tensor with one action per environment.
+    env_ids: <int32>[inference_batch_size], the environment task IDs (in range
+      [0, num_envs)).
+    num_training_envs: Number of training environments.
+    num_eval_envs: Number of eval environments.
+    eval_epsilon: Epsilon used for eval environments.
     num_actions: Number of environment actions.
 
   Returns:
-    A new <int32>[batch_size] tensor with one action per actor. With probability
-    epsilon, the new action is random, and with probability (1 -
-    epsilon), the action is unchanged, where epsilon is chosen for each actor.
+    A new <int32>[batch_size] tensor with one action per environment. With
+    probability epsilon, the new action is random, and with probability (1 -
+    epsilon), the action is unchanged, where epsilon is chosen for each
+    environment.
   """
   batch_size = tf.shape(actions)[0]
-  epsilons = get_actors_epsilon(env_ids, num_training_envs, num_eval_envs,
-                                eval_epsilon)
+  epsilons = get_envs_epsilon(env_ids, num_training_envs, num_eval_envs,
+                              eval_epsilon)
   random_actions = tf.random.uniform([batch_size], maxval=num_actions,
                                      dtype=tf.int32)
   probs = tf.random.uniform(shape=[batch_size])
@@ -471,10 +471,10 @@ def create_dataset(unroll_queue, replay_buffer, strategy, batch_size,
 def validate_config():
   utils.validate_learner_config(FLAGS)
   assert FLAGS.n_steps >= 1, '--n_steps < 1 does not make sense.'
-  assert FLAGS.num_actors > FLAGS.num_eval_envs, (
-      'Total number of actors ({}) should be greater than number of actors '
-      'reserved to eval ({})'.format(
-          FLAGS.num_actors, FLAGS.num_eval_envs))
+  assert FLAGS.num_envs > FLAGS.num_eval_envs, (
+      'Total number of environments ({}) should be greater than number of '
+      'environments reserved to eval ({})'.format(
+          FLAGS.num_envs, FLAGS.num_eval_envs))
 
 
 def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
@@ -656,28 +656,28 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   server = grpc.Server([FLAGS.server_address])
 
   # Buffer of incomplete unrolls. Filled during inference with new transitions.
-  # This only contains data from training actors.
+  # This only contains data from training environments.
   store = utils.UnrollStore(
       get_num_training_envs(), FLAGS.unroll_length,
       (action_specs, env_output_specs, agent_output_specs),
       num_overlapping_steps=FLAGS.burn_in)
-  env_run_ids = utils.Aggregator(FLAGS.num_actors,
+  env_run_ids = utils.Aggregator(FLAGS.num_envs,
                                  tf.TensorSpec([], tf.int64, 'run_ids'))
   info_specs = (
       tf.TensorSpec([], tf.int64, 'episode_num_frames'),
       tf.TensorSpec([], tf.float32, 'episode_returns'),
       tf.TensorSpec([], tf.float32, 'episode_raw_returns'),
   )
-  env_infos = utils.Aggregator(FLAGS.num_actors, info_specs, 'env_infos')
+  env_infos = utils.Aggregator(FLAGS.num_envs, info_specs, 'env_infos')
 
   # First agent state in an unroll.
   first_agent_states = utils.Aggregator(
-      FLAGS.num_actors, agent_state_specs, 'first_agent_states')
+      FLAGS.num_envs, agent_state_specs, 'first_agent_states')
 
   # Current agent state and action.
   agent_states = utils.Aggregator(
-      FLAGS.num_actors, agent_state_specs, 'agent_states')
-  actions = utils.Aggregator(FLAGS.num_actors, action_specs, 'actions')
+      FLAGS.num_envs, agent_state_specs, 'agent_states')
+  actions = utils.Aggregator(FLAGS.num_envs, action_specs, 'actions')
 
   unroll_specs = Unroll(agent_state_specs,
                         tf.TensorSpec([], tf.float32, 'priority'),
@@ -714,11 +714,11 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     loop.
 
     Args:
-      env_ids: <int32>[inference_batch_size], the actor task IDs (in range
+      env_ids: <int32>[inference_batch_size], the environment task IDs (in range
         [0, num_tasks)).
-      run_ids: <int64>[inference_batch_size], the actor run IDs. Actor
-        generate a random int64 run id at startup, so this can be used to detect
-        the actors jobs that restarted.
+      run_ids: <int64>[inference_batch_size], the environment run IDs.
+        Environment generates a random int64 run id at startup, so this can be
+        used to detect the environment jobs that restarted.
       env_outputs: Follows env_output_specs, but with the inference_batch_size
         added as first dimension. These are the actual environment outputs
         (reward, done, observation).
@@ -726,15 +726,16 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
         of each step.
 
     Returns:
-      A tensor <int32>[inference_batch_size] with one action for each actor.
+      A tensor <int32>[inference_batch_size] with one action for each
+        environment.
     """
-    # Reset the actors that had their first run or crashed.
+    # Reset the environments that had their first run or crashed.
     previous_run_ids = env_run_ids.read(env_ids)
     env_run_ids.replace(env_ids, run_ids)
     reset_indices = tf.where(tf.not_equal(previous_run_ids, run_ids))[:, 0]
     envs_needing_reset = tf.gather(env_ids, reset_indices)
     if tf.not_equal(tf.shape(envs_needing_reset)[0], 0):
-      tf.print('Actors needing reset:', envs_needing_reset)
+      tf.print('Environments needing reset:', envs_needing_reset)
     env_infos.reset(envs_needing_reset)
     store.reset(tf.gather(
         envs_needing_reset,
@@ -787,8 +788,8 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
             FLAGS.num_eval_envs, FLAGS.eval_epsilon, num_actions))
 
     # Append the latest outputs to the unroll, only for experience coming from
-    # training actors (IDs < num_training_envs), and insert completed unrolls
-    # in queue.
+    # training environments (IDs < num_training_envs), and insert completed
+    # unrolls in queue.
     # <int64>[num_training_envs]
     training_indices = tf.where(is_training_env(env_ids))[:, 0]
     training_env_ids = tf.gather(env_ids, training_indices)
@@ -829,7 +830,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     agent_states.replace(env_ids, curr_agent_states)
     actions.replace(env_ids, agent_outputs.action)
 
-    # Return environment actions to actors.
+    # Return environment actions to environments.
     return agent_outputs.action
 
   with strategy.scope():
@@ -862,15 +863,15 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
         last_ckpt_time = current_time
 
       def log(num_env_frames):
-        """Logs actor summaries."""
+        """Logs environment summaries."""
         summary_writer.set_as_default()
         tf.summary.experimental.set_step(num_env_frames)
         episode_info = info_queue.dequeue_many(info_queue.size())
-        for n, r, _, actor_id in zip(*episode_info):
-          is_training = is_training_env(actor_id)
+        for n, r, _, env_id in zip(*episode_info):
+          is_training = is_training_env(env_id)
           logging.info(
-              'Return: %f Frames: %i Actor id: %i (%s) Iteration: %i',
-              r, n, actor_id,
+              'Return: %f Frames: %i Env id: %i (%s) Iteration: %i',
+              r, n, env_id,
               'training' if is_training else 'eval',
               iterations.numpy())
           if not is_training:

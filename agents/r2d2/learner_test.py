@@ -57,8 +57,8 @@ class LearnerTest(tf.test.TestCase):
                 tf.equal(new_action, action)), tf.int32)).numpy(),
         num_actors)
 
-  def test_get_actors_epsilon(self):
-    epsilons = tf.function(learner.get_actors_epsilon)(
+  def test_get_envs_epsilon(self):
+    epsilons = tf.function(learner.get_envs_epsilon)(
         tf.range(20, dtype=tf.int32),
         num_training_envs=10,
         num_eval_envs=10,

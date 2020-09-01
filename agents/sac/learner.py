@@ -309,9 +309,9 @@ def get_replay_insertion_batch_size(per_replica=False):
 
 def validate_config():
   assert (
-      FLAGS.num_actors + FLAGS.unroll_queue_max_size >=
+      FLAGS.num_envs + FLAGS.unroll_queue_max_size >=
       get_replay_insertion_batch_size(per_replica=True)
-  ), ('Insertion batch size can not be bigger than num_actors + '
+  ), ('Insertion batch size can not be bigger than num_envs + '
       'unroll_queue_max_size.'
      )
   assert get_replay_insertion_batch_size(per_replica=True) >= 1, (
@@ -485,25 +485,25 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   server = grpc.Server([FLAGS.server_address])
 
   store = utils.UnrollStore(
-      FLAGS.num_actors, FLAGS.her_window_length or FLAGS.unroll_length,
+      FLAGS.num_envs, FLAGS.her_window_length or FLAGS.unroll_length,
       (action_specs, env_output_specs, action_specs))
-  env_run_ids = utils.Aggregator(FLAGS.num_actors,
+  env_run_ids = utils.Aggregator(FLAGS.num_envs,
                                  tf.TensorSpec([], tf.int64, 'run_ids'))
   info_specs = (
       tf.TensorSpec([], tf.int64, 'episode_num_frames'),
       tf.TensorSpec([], tf.float32, 'episode_returns'),
       tf.TensorSpec([], tf.float32, 'episode_raw_returns'),
   )
-  env_infos = utils.Aggregator(FLAGS.num_actors, info_specs, 'env_infos')
+  env_infos = utils.Aggregator(FLAGS.num_envs, info_specs, 'env_infos')
 
   # First agent state in an unroll.
   first_agent_states = utils.Aggregator(
-      FLAGS.num_actors, agent_state_specs, 'first_agent_states')
+      FLAGS.num_envs, agent_state_specs, 'first_agent_states')
 
   # Current agent state and action.
   agent_states = utils.Aggregator(
-      FLAGS.num_actors, agent_state_specs, 'agent_states')
-  actions = utils.Aggregator(FLAGS.num_actors, action_specs, 'actions')
+      FLAGS.num_envs, agent_state_specs, 'agent_states')
+  actions = utils.Aggregator(FLAGS.num_envs, action_specs, 'actions')
 
   unroll_specs = Unroll(agent_state_specs, *store.unroll_specs)
   unroll_queue = utils.StructuredFIFOQueue(FLAGS.unroll_queue_max_size,
@@ -537,13 +537,13 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   inference_specs = tf.nest.map_structure(add_batch_size, inference_specs)
   @tf.function(input_signature=inference_specs)
   def inference(env_ids, run_ids, env_outputs, raw_rewards):
-    # Reset the actors that had their first run or crashed.
+    # Reset the environment that had their first run or crashed.
     previous_run_ids = env_run_ids.read(env_ids)
     env_run_ids.replace(env_ids, run_ids)
     reset_indices = tf.where(tf.not_equal(previous_run_ids, run_ids))[:, 0]
     envs_needing_reset = tf.gather(env_ids, reset_indices)
     if tf.not_equal(tf.shape(envs_needing_reset)[0], 0):
-      tf.print('Actor ids needing reset:', envs_needing_reset)
+      tf.print('Environment ids needing reset:', envs_needing_reset)
     env_infos.reset(envs_needing_reset)
     store.reset(envs_needing_reset)
     initial_agent_states = agent.initial_state(
@@ -601,7 +601,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     agent_states.replace(env_ids, curr_agent_states)
     actions.replace(env_ids, agent_actions)
 
-    # Return environment actions to actors.
+    # Return environment actions to environments.
     return parametric_action_distribution.postprocess(agent_actions)
 
   with strategy.scope():

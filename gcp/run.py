@@ -14,6 +14,7 @@
 
 """Starts actor or learner job depending on the GCP node type."""
 
+import concurrent.futures
 import json
 import os
 import subprocess
@@ -22,7 +23,6 @@ import sys
 from absl import app
 from absl import flags
 from absl import logging
-import concurrent.futures
 
 flags.DEFINE_string('environment', 'football', 'Environment to run.')
 flags.DEFINE_string('agent', 'vtrace', 'Agent to run.')
@@ -44,7 +44,7 @@ def run_learner(executor, config):
       'python', get_py_main(),
       '--run_mode=learner',
       '--server_address=[::]:{}'.format(master_port),
-      '--num_actors={}'.format(FLAGS.workers * FLAGS.actors_per_worker)
+      '--num_envs={}'.format(FLAGS.workers * FLAGS.actors_per_worker)
   ]
   if '--' in sys.argv:
     args.extend(sys.argv[sys.argv.index('--') + 1:])
@@ -58,7 +58,7 @@ def run_actor(executor, config, actor_id):
       'python', get_py_main(),
       '--run_mode=actor',
       '--server_address={}'.format(master_addr),
-      '--num_actors={}'.format(FLAGS.workers * FLAGS.actors_per_worker)
+      '--num_envs={}'.format(FLAGS.workers * FLAGS.actors_per_worker)
   ]
   worker_index = config.get('task').get('index')
   args.append('--task={}'.format(worker_index * FLAGS.actors_per_worker +

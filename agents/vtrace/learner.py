@@ -191,8 +191,8 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   """
   logging.info('Starting learner loop')
   validate_config()
-  settings = utils.init_learner(FLAGS.num_training_tpus)
-  strategy, inference_devices, training_strategy, encode, decode = settings
+  settings = utils.init_learner_multi_host(FLAGS.num_training_tpus)
+  strategy, hosts, training_strategy, encode, decode = settings
   env = create_env_fn(0)
   parametric_action_distribution = get_parametric_distribution_for_action_space(
       env.action_space)
@@ -214,6 +214,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   initial_agent_state = agent.initial_state(1)
   agent_state_specs = tf.nest.map_structure(
       lambda t: tf.TensorSpec(t.shape[1:], t.dtype), initial_agent_state)
+  unroll_specs = [None]  # Lazy initialization.
   input_ = tf.nest.map_structure(
       lambda s: tf.zeros([1] + list(s.shape), s.dtype), agent_input_specs)
   input_ = encode(input_)
@@ -260,7 +261,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     data = next(iterator)
 
     def compute_gradients(args):
-      args = tf.nest.pack_sequence_as(unroll_specs, decode(args, data))
+      args = tf.nest.pack_sequence_as(unroll_specs[0], decode(args, data))
       with tf.GradientTape() as tape:
         loss, logs = compute_loss(logger, parametric_action_distribution, agent,
                                   *args)
@@ -304,122 +305,127 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   logger = utils.ProgressLogger(summary_writer=summary_writer,
                                 starting_step=iterations * iter_frame_ratio)
 
-  server = grpc.Server([FLAGS.server_address])
-
-  store = utils.UnrollStore(
-      FLAGS.num_envs, FLAGS.unroll_length,
-      (action_specs, env_output_specs, agent_output_specs))
-  env_run_ids = utils.Aggregator(FLAGS.num_envs,
-                                 tf.TensorSpec([], tf.int64, 'run_ids'))
+  servers = []
+  unroll_queues = []
   info_specs = (
       tf.TensorSpec([], tf.int64, 'episode_num_frames'),
       tf.TensorSpec([], tf.float32, 'episode_returns'),
       tf.TensorSpec([], tf.float32, 'episode_raw_returns'),
   )
-  env_infos = utils.Aggregator(FLAGS.num_envs, info_specs, 'env_infos')
 
-  # First agent state in an unroll.
-  first_agent_states = utils.Aggregator(
-      FLAGS.num_envs, agent_state_specs, 'first_agent_states')
-
-  # Current agent state and action.
-  agent_states = utils.Aggregator(
-      FLAGS.num_envs, agent_state_specs, 'agent_states')
-  actions = utils.Aggregator(FLAGS.num_envs, action_specs, 'actions')
-
-  unroll_specs = Unroll(agent_state_specs, *store.unroll_specs)
-  unroll_queue = utils.StructuredFIFOQueue(1, unroll_specs)
   info_queue = utils.StructuredFIFOQueue(-1, info_specs)
 
-  def add_batch_size(ts):
-    return tf.TensorSpec([FLAGS.inference_batch_size] + list(ts.shape),
-                         ts.dtype, ts.name)
+  def create_host(i, host, inference_devices):
+    with tf.device(host):
+      server = grpc.Server([FLAGS.server_address])
 
-  inference_iteration = tf.Variable(-1, dtype=tf.int64)
-  inference_specs = (
-      tf.TensorSpec([], tf.int32, 'env_id'),
-      tf.TensorSpec([], tf.int64, 'run_id'),
-      env_output_specs,
-      tf.TensorSpec([], tf.float32, 'raw_reward'),
-  )
-  inference_specs = tf.nest.map_structure(add_batch_size, inference_specs)
-  @tf.function(input_signature=inference_specs)
-  def inference(env_ids, run_ids, env_outputs, raw_rewards):
-    # Reset the environments that had their first run or crashed.
-    previous_run_ids = env_run_ids.read(env_ids)
-    env_run_ids.replace(env_ids, run_ids)
-    reset_indices = tf.where(tf.not_equal(previous_run_ids, run_ids))[:, 0]
-    envs_needing_reset = tf.gather(env_ids, reset_indices)
-    if tf.not_equal(tf.shape(envs_needing_reset)[0], 0):
-      tf.print('Environment ids needing reset:', envs_needing_reset)
-    env_infos.reset(envs_needing_reset)
-    store.reset(envs_needing_reset)
-    initial_agent_states = agent.initial_state(
-        tf.shape(envs_needing_reset)[0])
-    first_agent_states.replace(envs_needing_reset, initial_agent_states)
-    agent_states.replace(envs_needing_reset, initial_agent_states)
-    actions.reset(envs_needing_reset)
+      store = utils.UnrollStore(
+          FLAGS.num_envs, FLAGS.unroll_length,
+          (action_specs, env_output_specs, agent_output_specs))
+      env_run_ids = utils.Aggregator(FLAGS.num_envs,
+                                     tf.TensorSpec([], tf.int64, 'run_ids'))
+      env_infos = utils.Aggregator(FLAGS.num_envs, info_specs,
+                                   'env_infos')
 
-    tf.debugging.assert_non_positive(
-        tf.cast(env_outputs.abandoned, tf.int32),
-        'Abandoned done states are not supported in VTRACE.')
+      # First agent state in an unroll.
+      first_agent_states = utils.Aggregator(
+          FLAGS.num_envs, agent_state_specs, 'first_agent_states')
 
-    # Update steps and return.
-    env_infos.add(env_ids, (0, env_outputs.reward, raw_rewards))
-    done_ids = tf.gather(env_ids, tf.where(env_outputs.done)[:, 0])
-    info_queue.enqueue_many(env_infos.read(done_ids))
-    env_infos.reset(done_ids)
-    env_infos.add(env_ids, (FLAGS.num_action_repeats, 0., 0.))
+      # Current agent state and action.
+      agent_states = utils.Aggregator(
+          FLAGS.num_envs, agent_state_specs, 'agent_states')
+      actions = utils.Aggregator(FLAGS.num_envs, action_specs, 'actions')
 
-    # Inference.
-    prev_actions = parametric_action_distribution.postprocess(
-        actions.read(env_ids))
-    input_ = encode((prev_actions, env_outputs))
-    prev_agent_states = agent_states.read(env_ids)
-    def make_inference_fn(inference_device):
-      def device_specific_inference_fn():
-        with tf.device(inference_device):
-          @tf.function
-          def agent_inference(*args):
-            return agent(*decode(args), is_training=False,
-                         postprocess_action=False)
+      unroll_specs[0] = Unroll(agent_state_specs, *store.unroll_specs)
+      unroll_queue = utils.StructuredFIFOQueue(1, unroll_specs[0])
 
-          return agent_inference(*input_, prev_agent_states)
+      def add_batch_size(ts):
+        return tf.TensorSpec([FLAGS.inference_batch_size] + list(ts.shape),
+                             ts.dtype, ts.name)
 
-      return device_specific_inference_fn
+      inference_specs = (
+          tf.TensorSpec([], tf.int32, 'env_id'),
+          tf.TensorSpec([], tf.int64, 'run_id'),
+          env_output_specs,
+          tf.TensorSpec([], tf.float32, 'raw_reward'),
+      )
+      inference_specs = tf.nest.map_structure(add_batch_size, inference_specs)
+      def create_inference_fn(inference_device):
+        @tf.function(input_signature=inference_specs)
+        def inference(env_ids, run_ids, env_outputs, raw_rewards):
+          # Reset the environments that had their first run or crashed.
+          previous_run_ids = env_run_ids.read(env_ids)
+          env_run_ids.replace(env_ids, run_ids)
+          reset_indices = tf.where(
+              tf.not_equal(previous_run_ids, run_ids))[:, 0]
+          envs_needing_reset = tf.gather(env_ids, reset_indices)
+          if tf.not_equal(tf.shape(envs_needing_reset)[0], 0):
+            tf.print('Environment ids needing reset:', envs_needing_reset)
+          env_infos.reset(envs_needing_reset)
+          store.reset(envs_needing_reset)
+          initial_agent_states = agent.initial_state(
+              tf.shape(envs_needing_reset)[0])
+          first_agent_states.replace(envs_needing_reset, initial_agent_states)
+          agent_states.replace(envs_needing_reset, initial_agent_states)
+          actions.reset(envs_needing_reset)
 
-    # Distribute the inference calls among the inference cores.
-    branch_index = tf.cast(
-        inference_iteration.assign_add(1) % len(inference_devices), tf.int32)
-    agent_outputs, curr_agent_states = tf.switch_case(branch_index, {
-        i: make_inference_fn(inference_device)
-        for i, inference_device in enumerate(inference_devices)
-    })
+          tf.debugging.assert_non_positive(
+              tf.cast(env_outputs.abandoned, tf.int32),
+              'Abandoned done states are not supported in VTRACE.')
 
-    # Append the latest outputs to the unroll and insert completed unrolls in
-    # queue.
-    completed_ids, unrolls = store.append(
-        env_ids, (prev_actions, env_outputs, agent_outputs))
-    unrolls = Unroll(first_agent_states.read(completed_ids), *unrolls)
-    unroll_queue.enqueue_many(unrolls)
-    first_agent_states.replace(completed_ids,
-                               agent_states.read(completed_ids))
+          # Update steps and return.
+          env_infos.add(env_ids, (0, env_outputs.reward, raw_rewards))
+          done_ids = tf.gather(env_ids, tf.where(env_outputs.done)[:, 0])
+          if i == 0:
+            info_queue.enqueue_many(env_infos.read(done_ids))
+          env_infos.reset(done_ids)
+          env_infos.add(env_ids, (FLAGS.num_action_repeats, 0., 0.))
 
-    # Update current state.
-    agent_states.replace(env_ids, curr_agent_states)
-    actions.replace(env_ids, agent_outputs.action)
+          # Inference.
+          prev_actions = parametric_action_distribution.postprocess(
+              actions.read(env_ids))
+          input_ = encode((prev_actions, env_outputs))
+          prev_agent_states = agent_states.read(env_ids)
+          with tf.device(inference_device):
+            @tf.function
+            def agent_inference(*args):
+              return agent(*decode(args), is_training=False,
+                           postprocess_action=False)
 
-    # Return environment actions to environments.
-    return parametric_action_distribution.postprocess(agent_outputs.action)
+            agent_outputs, curr_agent_states = agent_inference(
+                *input_, prev_agent_states)
 
-  with strategy.scope():
-    server.bind(inference)
-  server.start()
+          # Append the latest outputs to the unroll and insert completed unrolls
+          # in queue.
+          completed_ids, unrolls = store.append(
+              env_ids, (prev_actions, env_outputs, agent_outputs))
+          unrolls = Unroll(first_agent_states.read(completed_ids), *unrolls)
+          unroll_queue.enqueue_many(unrolls)
+          first_agent_states.replace(completed_ids,
+                                     agent_states.read(completed_ids))
+
+          # Update current state.
+          agent_states.replace(env_ids, curr_agent_states)
+          actions.replace(env_ids, agent_outputs.action)
+          # Return environment actions to environments.
+          return parametric_action_distribution.postprocess(
+              agent_outputs.action)
+
+        return inference
+
+      with strategy.scope():
+        server.bind([create_inference_fn(d) for d in inference_devices])
+      server.start()
+      unroll_queues.append(unroll_queue)
+      servers.append(server)
+
+  for i, (host, inference_devices) in enumerate(hosts):
+    create_host(i, host, inference_devices)
 
   def dequeue(ctx):
     # Create batch (time major).
     env_outputs = tf.nest.map_structure(lambda *args: tf.stack(args), *[
-        unroll_queue.dequeue()
+        unroll_queues[ctx.input_pipeline_id].dequeue()
         for i in range(ctx.get_per_replica_batch_size(FLAGS.batch_size))
     ])
     env_outputs = env_outputs._replace(
@@ -434,8 +440,12 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
 
   def dataset_fn(ctx):
     dataset = tf.data.Dataset.from_tensors(0).repeat(None)
-    return dataset.map(lambda _: dequeue(ctx),
-                       num_parallel_calls=ctx.num_replicas_in_sync)
+
+    def _dequeue(_):
+      return dequeue(ctx)
+
+    return dataset.map(
+        _dequeue, num_parallel_calls=ctx.num_replicas_in_sync // len(hosts))
 
   dataset = training_strategy.experimental_distribute_datasets_from_function(
       dataset_fn)
@@ -474,5 +484,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   logger.shutdown()
   manager.save()
   tf.saved_model.save(agent, os.path.join(FLAGS.logdir, 'saved_model'))
-  server.shutdown()
-  unroll_queue.close()
+  for server in servers:
+    server.shutdown()
+  for unroll_queue in unroll_queues:
+    unroll_queue.close()

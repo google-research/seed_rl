@@ -84,7 +84,6 @@ class Server(object):
       if f.input_signature is None:
         raise ValueError("tf.function must have input_signature set.")
 
-
       self._keep_alive.append(f.python_function)
 
       fn_name = f.__name__

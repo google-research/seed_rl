@@ -11,7 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM tensorflow/tensorflow:2.2.0-gpu
+FROM tensorflow/tensorflow:2.3.0-gpu
 
 RUN apt-get update && apt-get install -y \
     curl \
@@ -72,7 +72,7 @@ RUN mkdir dataset && \
     bash
 
 RUN pip3 install gym
-RUN pip3 install tensorflow_probability==0.9.0
+RUN pip3 install tensorflow_probability==0.11.0
 
 # Copy SEED codebase and SEED GRPC binaries.
 ADD . /seed_rl/

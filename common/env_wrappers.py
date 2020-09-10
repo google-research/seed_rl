@@ -17,7 +17,6 @@
 
 from absl import flags
 import gym
-from matplotlib import pyplot as plt
 import numpy as np
 import tensorflow as tf
 
@@ -41,65 +40,6 @@ def flatten_and_concatenate_obs(obs_dict):
       [obs.astype(np.float32).flatten() for obs in obs_dict.values()])
 
 
-class TFAgents2GymWrapper(gym.Env):
-  """Transform TFAgents environment into an OpenAI Gym environment."""
-
-  def __init__(self, env):
-    self.env = env
-    self.observation_space = env.observation_space
-    self.action_space = env.action_space
-
-  def step(self, action):
-    assert self.action_space.contains(action)
-    env_output = self.env.step(action)
-    reward = env_output.reward
-    done = env_output.is_last()
-    try:
-      info = self.env.get_info()
-    except NotImplementedError:
-      info = {}
-    return env_output.observation, reward, done, info
-
-  def reset(self):
-    return self.env.reset().observation
-
-  def render(self, mode='human', **kwargs):
-    frame = self.env.render(mode, **kwargs)
-    plt.figure(1)
-    plt.clf()
-    plt.imshow(frame)
-    plt.pause(0.001)
-
-
-class DmControl2GymWrapper(gym.Env):
-  """Transform DmControl environment into an OpenAI Gym environment."""
-  metadata = {'render.modes': ['rgb_array'], 'video.frames_per_second': 60}
-
-  def __init__(self, env):
-    self.env = env
-    ndim = 0
-    # Count the number of dimensions once the observation will be flatten.
-    for spec in env.observation_spec().values():
-      spec_dim = 1
-      for dim in spec.shape:
-        spec_dim *= dim
-      ndim += spec_dim
-    self.observation_space = gym.spaces.Box(-np.inf, np.inf, shape=(ndim,))
-    self.action_space = spec_to_box(env.action_spec())
-
-  def step(self, action):
-    if not self.action_space.contains(action):
-      raise ValueError('Action out of bound: {}'.format(action))
-    env_output = self.env.step(action)
-    reward = float(env_output.reward)
-    done = env_output.step_type.last()
-    return flatten_and_concatenate_obs(env_output.observation), reward, done, {}
-
-  def reset(self):
-    return flatten_and_concatenate_obs(self.env.reset().observation)
-
-  def render(self, mode='rgb_array'):
-    return self.env.physics.render()
 
 
 class UniformBoundActionSpaceWrapper(gym.Wrapper):

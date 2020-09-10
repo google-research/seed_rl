@@ -11,7 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM tensorflow/tensorflow:2.2.0-gpu
+FROM tensorflow/tensorflow:2.3.0-gpu
 
 # Needed to disable interactive configuration by tzdata.
 RUN ln -fs /usr/share/zoneinfo/Europe/Dublin /etc/localtime
@@ -40,7 +40,7 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /
 RUN pip3 install gfootball==2.0.4
-RUN pip3 install tensorflow_probability==0.9.0
+RUN pip3 install tensorflow_probability==0.11.0
 
 # Copy SEED codebase and SEED GRPC library.
 ADD . /seed_rl/

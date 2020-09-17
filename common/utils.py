@@ -104,7 +104,7 @@ def init_learner_multi_host(num_training_tpus: int):
     enc = lambda x: x
     dec = lambda x, s=None: x if s is None else tf.nest.pack_sequence_as(s, x)
     return MultiHostSettings(
-        strategy, [(device_name, [device_name])], strategy, enc, dec)
+        strategy, [('/cpu', [device_name])], strategy, enc, dec)
 
 
 def init_learner(num_training_tpus):

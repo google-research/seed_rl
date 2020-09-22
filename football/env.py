@@ -32,18 +32,18 @@ flags.DEFINE_enum('smm_size', 'default', ['default', 'medium', 'large'],
                   'Size of the Super Mini Map.')
 
 
-def create_environment(_):
+def create_environment(unused_task_id, config):
   """Returns a gym Football environment."""
-  logging.info('Creating environment: %s', FLAGS.game)
-  assert FLAGS.num_action_repeats == 1, 'Only action repeat of 1 is supported.'
+  logging.info('Creating environment: %s', config.game)
+  assert config.num_action_repeats == 1, 'Only action repeat of 1 is supported.'
   channel_dimensions = {
       'default': (96, 72),
       'medium': (120, 90),
       'large': (144, 108),
-  }[FLAGS.smm_size]
+  }[config.smm_size]
   env = gym.make(
-      'gfootball:GFootball-%s-SMM-v0' % FLAGS.game,
+      'gfootball:GFootball-%s-SMM-v0' % config.game,
       stacked=True,
-      rewards=FLAGS.reward_experiment,
+      rewards=config.reward_experiment,
       channel_dimensions=channel_dimensions)
   return observation.PackedBitsObservation(env)

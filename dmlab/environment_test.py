@@ -27,7 +27,7 @@ FLAGS = flags.FLAGS
 class EnvironmentTest(tf.test.TestCase):
 
   def test_run_step(self):
-    environment = env.create_environment(0)
+    environment = env.create_environment(0, FLAGS)
     environment.reset()
     environment.step(0)
     environment.close()

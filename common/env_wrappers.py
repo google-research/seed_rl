@@ -130,7 +130,7 @@ class DiscretizeEnvWrapper(gym.Env):
 class BatchedEnvironment:
   """A wrapper that batches several environment instances."""
 
-  def __init__(self, create_env_fn, batch_size, id_offset):
+  def __init__(self, create_env_fn, batch_size, id_offset, config):
     """Initialize the wrapper.
 
     Args:
@@ -138,13 +138,14 @@ class BatchedEnvironment:
       batch_size: The number of environment instances to create.
       id_offset: The offset for environment ids. Environments receive sequential
         ids starting from this offset.
+      config: Config object defining configuration of the environment
     """
     self._batch_size = batch_size
     # Note: some environments require an argument to be of a native Python
     # numeric type. If we create env_ids as a numpy array, its elements will
     # be of type np.int32. So we create it as a plain Python array first.
     env_ids = [id_offset + i for i in range(batch_size)]
-    self._envs = [create_env_fn(id) for id in env_ids]
+    self._envs = [create_env_fn(id, config) for id in env_ids]
     self._env_ids = np.array(env_ids, np.int32)
     self._obs = None
 

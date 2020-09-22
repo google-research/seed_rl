@@ -500,7 +500,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   validate_config()
   settings = utils.init_learner(FLAGS.num_training_tpus)
   strategy, inference_devices, training_strategy, encode, decode = settings
-  env = create_env_fn(0)
+  env = create_env_fn(0, FLAGS)
   env_output_specs = utils.EnvOutput(
       tf.TensorSpec([], tf.float32, 'reward'),
       tf.TensorSpec([], tf.bool, 'done'),

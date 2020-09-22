@@ -16,6 +16,7 @@
 
 import atexit
 import collections
+import pickle
 import threading
 import time
 import timeit
@@ -984,3 +985,54 @@ def validate_learner_config(config, num_hosts=1):
       'Inference batch size is bigger than the number of environments.')
 
 
+
+
+def config_from_flags():
+  """Generates training config from flags.
+
+  Returns:
+    Generated training config.
+  """
+  config = {}
+  for key in FLAGS.__flags.keys():  
+    config[key] = FLAGS[key].value
+  return config
+
+
+def serialize_config(config):
+  """Serializes training config, so that it can be send over SEED's GRPC.
+
+  Args:
+    config: config to serialize.
+
+  Returns:
+    Tensor representing serialized training config.
+  """
+  if isinstance(config, flags._flagvalues.FlagValues):  
+    skip_keys = {'run_mode'}
+    output = {}
+    for key in FLAGS.__flags.keys():  
+      if FLAGS[key].value != FLAGS[key].default and key not in skip_keys:
+        output[key] = FLAGS[key].value
+    return tf.constant(pickle.dumps(output))
+  return tf.constant(pickle.dumps(config))
+
+
+def update_config(current_config, client):
+  """Updates current config with information from the Learner.
+
+  Args:
+    current_config: config to update.
+    client: Learner's client object used to retrieve updated config.
+  """
+  try:
+    update = client.get_config()
+  except AttributeError:
+    # Getting configuration is not supported by the Learner.
+    return
+  update = pickle.loads(update.numpy())
+  if isinstance(update, dict):  
+    for key, value in update:
+      current_config[key] = value
+  else:
+    current_config = update

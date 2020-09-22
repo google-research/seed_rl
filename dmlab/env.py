@@ -132,15 +132,16 @@ class DmLab(gym.Env):
     self._env.close()
 
 
-def create_environment(task):
-  logging.info('Creating environment: %s', FLAGS.game)
-  return DmLab(FLAGS.game,
-               FLAGS.num_action_repeats,
-               seed=task + 1,
-               is_test=False,
-               level_cache_dir=FLAGS.level_cache_dir,
-               config={
-                   'width': FLAGS.width,
-                   'height': FLAGS.height,
-                   'logLevel': 'WARN',
-               })
+def create_environment(task, config):
+  logging.info('Creating environment: %s', config.game)
+  return DmLab(
+      config.game,
+      config.num_action_repeats,
+      seed=task + 1,
+      is_test=False,
+      level_cache_dir=config.level_cache_dir,
+      config={
+          'width': config.width,
+          'height': config.height,
+          'logLevel': 'WARN',
+      })

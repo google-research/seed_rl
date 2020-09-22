@@ -39,12 +39,12 @@ flags.DEFINE_boolean('sticky_actions', False,
                      'Machado et al. (2017).')
 
 
-def create_environment(task):  
-  logging.info('Creating environment: %s', FLAGS.game)
+def create_environment(task, config):  
+  logging.info('Creating environment: %s', config.game)
 
 
-  game_version = 'v0' if FLAGS.sticky_actions else 'v4'
-  full_game_name = '{}NoFrameskip-{}'.format(FLAGS.game, game_version)
+  game_version = 'v0' if config.sticky_actions else 'v4'
+  full_game_name = '{}NoFrameskip-{}'.format(config.game, game_version)
   env = gym.make(full_game_name, full_action_space=True)
   env.seed(task)
 
@@ -55,5 +55,6 @@ def create_environment(task):
   # litterature instead of OpenAI Gym's default of 100,000 steps.
   env = gym.wrappers.TimeLimit(env.env, max_episode_steps=108000)
   return atari_preprocessing.AtariPreprocessing(
-      env, frame_skip=FLAGS.num_action_repeats,
-      max_random_noops=FLAGS.max_random_noops)
+      env,
+      frame_skip=config.num_action_repeats,
+      max_random_noops=config.max_random_noops)

@@ -42,13 +42,16 @@ def are_summaries_enabled():
   return FLAGS.task < FLAGS.num_actors_with_summaries
 
 
-def actor_loop(create_env_fn):
+def actor_loop(create_env_fn, config=None):
   """Main actor loop.
 
   Args:
     create_env_fn: Callable (taking the task ID as argument) that must return a
       newly created environment.
+    config: Configuration of the training.
   """
+  if not config:
+    config = FLAGS
   env_batch_size = FLAGS.env_batch_size
   logging.info('Starting actor loop. Task: %r. Environment batch size: %r',
                FLAGS.task, env_batch_size)
@@ -68,9 +71,9 @@ def actor_loop(create_env_fn):
       try:
         # Client to communicate with the learner.
         client = grpc.Client(FLAGS.server_address)
-
+        utils.update_config(config, client)
         batched_env = env_wrappers.BatchedEnvironment(
-            create_env_fn, env_batch_size, FLAGS.task * env_batch_size)
+            create_env_fn, env_batch_size, FLAGS.task * env_batch_size, config)
 
         env_id = batched_env.env_ids
         run_id = np.random.randint(

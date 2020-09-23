@@ -303,4 +303,4 @@ def get_parametric_distribution_for_action_space(action_space):
         n_discrete_actions_per_dim=discrete_space.nvec[0],
         discrete_dtype=discrete_space.dtype)
   else:
-    assert False, 'Unsupported action space'
+    raise ValueError(f'Unsupported action space {action_space}')

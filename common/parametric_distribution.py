@@ -16,14 +16,14 @@
 """Parametric distributions over action spaces."""
 
 import abc
-from absl import flags
+from typing import Callable, Optional
+
+import dataclasses
 import gym
 import tensorflow as tf
 import tensorflow_probability as tfp
 tfb = tfp.bijectors
 tfd = tfp.distributions
-
-FLAGS = flags.FLAGS
 
 
 class ParametricDistribution(abc.ABC):
@@ -162,33 +162,93 @@ class MultiCategoricalDistribution(ParametricDistribution):
     return tfd.Categorical(logits=logits, dtype=self._dtype)
 
 
-class NormalTanhDistribution(ParametricDistribution):
-  """Normal distribution followed by tanh."""
+@tf.custom_gradient
+def safe_exp(x):
+  e = tf.exp(tf.clip_by_value(x, -15, 15))
 
-  def __init__(self, event_size, min_std=0.001):
+  def grad(dy):
+    return dy * e
+
+  return e, grad
+
+
+class ClippedIdentity(tfb.identity.Identity):
+  """Compute Y = clip_by_value(X, -1, 1).
+
+  Note that we do not override `is_injective` despite this bijector not being
+  injective, to not disable Identity's `forward_log_det_jacobian`. See also
+  tensorflow_probability.bijectors.identity.Identity.
+  """
+
+  def __init__(self, validate_args=False, name='clipped_identity'):
+    with tf.name_scope(name) as name:
+      super(ClippedIdentity, self).__init__(
+          validate_args=validate_args, name=name)
+
+  @classmethod
+  def _is_increasing(cls):
+    return False
+
+  def _forward(self, x):
+    return tf.clip_by_value(x, -1., 1.)
+
+
+def softplus_default_std_fn(scale):
+  return tf.nn.softplus(scale) + 1e-3
+
+
+@dataclasses.dataclass
+class ContinuousDistributionConfig(object):
+  """Configuration for continuous distributions.
+
+  Currently, only NormalSquashedDistribution is supported. The default
+  configuration corresponds to a normal distribution (with standard deviation
+  computed from params using an unshifted softplus offset by 1e-3),
+  followed by tanh.
+  """
+  # Transforms parameters into non-negative values for standard deviation of the
+  # gaussian.
+  gaussian_std_fn: Callable[[tf.Tensor], tf.Tensor] = softplus_default_std_fn
+  # The squashing postprocessor, e.g. ClippedIdentity or
+  # tensorflow_probability.bijectors.Tanh.
+  postprocessor: tfb.bijector.Bijector = tfb.Tanh()
+
+
+class NormalSquashedDistribution(ParametricDistribution):
+  """Normal distribution followed by squashing (tanh by default).
+
+  We apply tanh (or clipping) to gaussian actions to bound them. Normally we
+  would use tfd.TransformedDistribution to automatically apply squashing to the
+  distribution. We do not do it here because of tanh saturation which would
+  make log_prob computations impossible. Instead, most of the code operates on
+  pre-squashed actions and we take the postprocessor jacobian into account in
+  log_prob computations.
+  """
+
+  def __init__(self,
+               event_size,
+               config: Optional[ContinuousDistributionConfig] = None):
     """Initialize the distribution.
 
     Args:
       event_size: the size of events (i.e. actions).
-      min_std: minimum std for the gaussian.
+      config: Configuration, default configuration when None is passed.
     """
-    # We apply tanh to gaussian actions to bound them.
-    # Normally we would use tfd.TransformedDistribution to automatically
-    # apply tanh to the distribution.
-    # We can't do it here because of tanh saturation
-    # which would make log_prob computations impossible. Instead, most
-    # of the code operate on pre-tanh actions and we take the postprocessor
-    # jacobian into account in log_prob computations.
+    if config is None:
+      config = ContinuousDistributionConfig()
     super().__init__(
-        param_size=2 * event_size, postprocessor=tfb.Tanh(), event_ndims=1,
+        param_size=2 * event_size,
+        postprocessor=config.postprocessor,
+        event_ndims=1,
         reparametrizable=True)
-    self._min_std = min_std
+    self._std_fn = config.gaussian_std_fn
 
   def create_dist(self, parameters):
     loc, scale = tf.split(parameters, 2, axis=-1)
-    scale = tf.math.softplus(scale) + self._min_std
+    scale = self._std_fn(scale)
     dist = tfd.Normal(loc=loc, scale=scale)
     return dist
+
 
 
 class JointDistribution(ParametricDistribution):
@@ -269,11 +329,15 @@ def check_box_space(space):
         f'Learner only supports actions bounded to [-1,1]: {space.high}')
 
 
-def get_parametric_distribution_for_action_space(action_space):
+def get_parametric_distribution_for_action_space(
+    action_space,
+    continuous_config: Optional[ContinuousDistributionConfig] = None):
   """Returns an action distribution parametrization based on the action space.
 
   Args:
     action_space: action space of the environment
+    continuous_config: Configuration for the continuous action distribution
+      (used when needed by the action space).
   """
   if isinstance(action_space, gym.spaces.Discrete):
     return CategoricalDistribution(action_space.n,
@@ -286,8 +350,8 @@ def get_parametric_distribution_for_action_space(action_space):
         dtype=action_space.dtype)
   elif isinstance(action_space, gym.spaces.Box):  # continuous actions
     check_box_space(action_space)
-    return NormalTanhDistribution(
-        event_size=action_space.shape[0])
+    return NormalSquashedDistribution(
+        event_size=action_space.shape[0], config=continuous_config)
   elif isinstance(action_space, gym.spaces.Tuple):  # mixed actions
     assert len(action_space) == 2, action_space
 
@@ -304,3 +368,61 @@ def get_parametric_distribution_for_action_space(action_space):
         discrete_dtype=discrete_space.dtype)
   else:
     raise ValueError(f'Unsupported action space {action_space}')
+
+
+def safe_exp_std_fn(std_for_zero_param: float, min_std):
+  std_shift = tf.math.log(std_for_zero_param - min_std)
+  fn = lambda scale: safe_exp(scale + std_shift) + min_std
+  assert abs(fn(0) - std_for_zero_param) < 1e-3
+  return fn
+
+
+def softplus_std_fn(std_for_zero_param: float, min_std: float):
+  std_shift = tfp.math.softplus_inverse(std_for_zero_param - min_std)
+  fn = lambda scale: tf.nn.softplus(scale + std_shift) + min_std
+  assert abs(fn(0) - std_for_zero_param) < 1e-3
+  return fn
+
+
+def continuous_action_config(
+    action_min_gaussian_std: float = 1e-3,
+    action_gaussian_std_fn: str = 'softplus',
+    action_std_for_zero_param: float = 1,
+    action_postprocessor: str = 'Tanh') -> ContinuousDistributionConfig:
+  """Configures continuous distributions from numerical and string inputs.
+
+  Currently, only NormalSquashedDistribution is supported. The default
+  configuration corresponds to a normal distribution with standard deviation
+  computed from params using an unshifted softplus, followed by tanh.
+  Args:
+    action_min_gaussian_std: minimal standard deviation.
+    action_gaussian_std_fn: transform for standard deviation parameters.
+    action_std_for_zero_param: shifts the transform to get this std when
+      parameters are zero.
+    action_postprocessor: the non-linearity applied to the sample from the
+      gaussian.
+
+  Returns:
+    A continuous distribution setup, with the parameters transform
+    to get the standard deviation applied with a shift, as configured.
+  """
+  config = ContinuousDistributionConfig()
+
+  # Note: see cl/319488607, which introduced the cast.
+  config.min_gaussian_std = float(action_min_gaussian_std)
+  if action_gaussian_std_fn == 'safe_exp':
+    config.gaussian_std_fn = safe_exp_std_fn(action_std_for_zero_param,
+                                             config.min_gaussian_std)
+  elif action_gaussian_std_fn == 'softplus':
+    config.gaussian_std_fn = softplus_std_fn(action_std_for_zero_param,
+                                             config.min_gaussian_std)
+  else:
+    raise ValueError('Flag `action_gaussian_std_fn` only supports safe_exp and'
+                     f' softplus, got: {action_gaussian_std_fn}')
+
+  if action_postprocessor == 'ClippedIdentity':
+    config.postprocessor = ClippedIdentity()
+  elif action_postprocessor != 'Tanh':
+    raise ValueError('Flag `action_postprocessor` only supports Tanh and'
+                     f' ClippedIdentity, got: {action_postprocessor}')
+  return config

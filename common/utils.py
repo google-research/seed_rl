@@ -976,7 +976,9 @@ def validate_learner_config(config, num_hosts=1):
   assert config.num_envs > 0
   assert config.env_batch_size > 0
   if config.inference_batch_size == -1:
-    config.inference_batch_size = max(1, config.num_envs // (2 * num_hosts))
+    config.inference_batch_size = max(config.env_batch_size,
+                                      config.num_envs // (2 * num_hosts))
+  assert config.inference_batch_size > 0
   assert config.inference_batch_size % config.env_batch_size == 0, (
       'Learner-side batch size (=%d) must be exact multiple of the '
       'actor-side batch size (=%d).' %

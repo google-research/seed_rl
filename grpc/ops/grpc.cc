@@ -592,7 +592,7 @@ class DynamicFn : public FnType {
   DynamicFn(FunctionLibraryRuntime* lib,
             FunctionLibraryRuntime::Handle f_handle,
             DataTypeVector&& input_types,
-            std::vector<TensorShape>&& input_shapes,
+            std::vector<TensorShape> input_shapes,
             std::vector<Tensor>&& captures, GrpcServerResource* resource,
             thread::ThreadPool* tp, bool batched)
       : lib_(lib),
@@ -939,7 +939,7 @@ class GrpcServerBindOp : public OpKernel {
     }
     std::unique_ptr<FnType> func;
     func.reset(static_cast<FnType*>(new DynamicFn(
-        lib, f_handle, std::move(input_types), std::move(input_shapes_),
+        lib, f_handle, std::move(input_types), input_shapes_,
         std::move(captures), resource, resource->func_tp.get(), batched_)));
     OP_REQUIRES_OK(ctx, resource->tensor_handler()->Bind(
         fn_name_, output_specs_, std::move(func), first_bind_));

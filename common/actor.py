@@ -42,13 +42,14 @@ def are_summaries_enabled():
   return FLAGS.task < FLAGS.num_actors_with_summaries
 
 
-def actor_loop(create_env_fn, config=None):
+def actor_loop(create_env_fn, config=None, log_period=1):
   """Main actor loop.
 
   Args:
     create_env_fn: Callable (taking the task ID as argument) that must return a
       newly created environment.
     config: Configuration of the training.
+    log_period: How often to log in seconds.
   """
   if not config:
     config = FLAGS
@@ -148,7 +149,7 @@ def actor_loop(create_env_fn, config=None):
               episode_raw_return_sum += episode_raw_return[i]
               global_step += episode_step[i]
               episodes_in_report += 1
-              if current_time - last_log_time > 1:
+              if current_time - last_log_time >= log_period:
                 logging.info(
                     'Actor steps: %i, Return: %f Raw return: %f '
                     'Episode steps: %f, Speed: %f steps/s', global_step,
@@ -178,6 +179,7 @@ def actor_loop(create_env_fn, config=None):
             batched_env.render()
 
           actor_step += 1
-      except (tf.errors.UnavailableError, tf.errors.CancelledError) as e:
-        logging.exception(e)
+      except (tf.errors.UnavailableError, tf.errors.CancelledError):
+        logging.info('Inference call failed. This is normal at the end of '
+                     'training.')
         batched_env.close()

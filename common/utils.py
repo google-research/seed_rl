@@ -539,7 +539,7 @@ class ProgressLogger(object):
 
   def __init__(self,
                summary_writer=None,
-               initial_period=0.01,
+               initial_period=0.1,
                period_factor=1.01,
                max_period=10.0,
                starting_step=0):
@@ -582,7 +582,7 @@ class ProgressLogger(object):
       starting_step: Step from which to start the summary writer.
     """
     self.summary_writer = summary_writer
-    self.step_cnt.assign(starting_step - 1)
+    self.step_cnt.assign(starting_step)
     self.ready_values.assign([-1.0])
     self.last_log_time = timeit.default_timer()
     self.last_log_step = starting_step
@@ -631,9 +631,9 @@ class ProgressLogger(object):
     """Perform single round of logging."""
     logging_time = timeit.default_timer()
     step_cnt = self.step_cnt.read_value()
-    values = self.ready_values.read_value().numpy()
-    if values[0] == -1:
+    if step_cnt == self.last_log_step:
       return
+    values = self.ready_values.read_value().numpy()
     assert len(values) == len(
         self.log_keys
     ), 'Mismatch between number of keys and values to log: %r vs %r' % (

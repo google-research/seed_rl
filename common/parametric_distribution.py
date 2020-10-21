@@ -193,6 +193,21 @@ class ClippedIdentity(tfb.identity.Identity):
     return tf.clip_by_value(x, -1., 1.)
 
 
+class SafeTanh(tfb.Tanh):
+  """Compute Y = Tanh(X, -1, 1).
+
+  It's safer than Tanh because it won't return NaNs when inversing with values
+  out of (-1, 1)
+  """
+
+  def __init__(self, validate_args=False, name='safe_tanh'):
+    with tf.name_scope(name) as name:
+      super(SafeTanh, self).__init__(validate_args=validate_args, name=name)
+
+  def _inverse(self, x):
+    return super(SafeTanh, self)._inverse(tf.clip_by_value(x, -.999, .999))
+
+
 def softplus_default_std_fn(scale):
   return tf.nn.softplus(scale) + 1e-3
 
@@ -209,9 +224,8 @@ class ContinuousDistributionConfig(object):
   # Transforms parameters into non-negative values for standard deviation of the
   # gaussian.
   gaussian_std_fn: Callable[[tf.Tensor], tf.Tensor] = softplus_default_std_fn
-  # The squashing postprocessor, e.g. ClippedIdentity or
-  # tensorflow_probability.bijectors.Tanh.
-  postprocessor: tfb.bijector.Bijector = tfb.Tanh()
+  # The squashing postprocessor, e.g. ClippedIdentity or SafeTanh.
+  postprocessor: tfb.bijector.Bijector = SafeTanh()
 
 
 class NormalSquashedDistribution(ParametricDistribution):

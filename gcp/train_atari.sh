@@ -45,7 +45,7 @@ trainingInput:
   hyperparameters:
     goal: MAXIMIZE
     hyperparameterMetricTag: eval/episode_return
-    maxTrials: 10
+    maxTrials: 1
     maxParallelTrials: 1
     enableTrialEarlyStopping: True
     params:

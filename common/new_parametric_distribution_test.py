@@ -36,20 +36,19 @@ class ParametricDistributionTest(tf.test.TestCase):
         (self.create_box_space(), self.create_multidiscrete_space()))
 
   def test_joint_distribution_shape(self):
-    (_, joint_distribution
-    ) = new_parametric_distribution.get_parametric_distribution_for_action_space(
+    joint_distribution = new_parametric_distribution.get_parametric_distribution_for_action_space(
         self.create_tuple_space())
 
     batch_shape = [3, 2]
     parameters_shape = [3 * 2 + 3 * 4]
 
     parameters = tf.zeros(batch_shape + parameters_shape)
+    self.assertFalse(joint_distribution.reparametrizable)
     self.assertEqual(
         joint_distribution(parameters).entropy().shape, batch_shape)
 
   def test_joint_distribution_logprob(self):
-    (_, joint_distribution
-    ) = new_parametric_distribution.get_parametric_distribution_for_action_space(
+    joint_distribution = new_parametric_distribution.get_parametric_distribution_for_action_space(
         self.create_tuple_space())
     parameters = np.array([0., 0., 0.,   # Normal locs
                            .1, .2, .3,   # Normal scales
@@ -70,19 +69,17 @@ class ParametricDistributionTest(tf.test.TestCase):
 
     log_probs = joint_distribution(parameters).log_prob(actions)
 
-    (_, create_normaltanh_dist
-    ) = new_parametric_distribution.get_parametric_distribution_for_action_space(
+    normaltanh_dist = new_parametric_distribution.get_parametric_distribution_for_action_space(
         self.create_box_space())
     continuous_parameters = parameters[:6]
-    continuous_log_probs = create_normaltanh_dist(
-        continuous_parameters).log_prob(continuous_actions)
+    continuous_log_probs = normaltanh_dist(continuous_parameters).log_prob(
+        continuous_actions)
 
-    (_, create_multidiscrete_dist
-    ) = new_parametric_distribution.get_parametric_distribution_for_action_space(
+    multidiscrete_dist = new_parametric_distribution.get_parametric_distribution_for_action_space(
         self.create_multidiscrete_space())
     discrete_parameters = tf.convert_to_tensor(parameters[6:])
-    discrete_log_probs = create_multidiscrete_dist(
-        discrete_parameters).log_prob(discrete_actions)
+    discrete_log_probs = multidiscrete_dist(discrete_parameters).log_prob(
+        discrete_actions)
 
     self.assertAllClose(log_probs, continuous_log_probs + discrete_log_probs)
 

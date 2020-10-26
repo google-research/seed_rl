@@ -15,6 +15,7 @@
 
 """Parametric distributions over action spaces."""
 
+import abc
 from typing import Callable
 
 import dataclasses
@@ -22,8 +23,67 @@ import gym
 import tensorflow as tf
 import tensorflow_probability as tfp
 from tensorflow_probability.python.distributions import kullback_leibler
+
 tfb = tfp.bijectors
 tfd = tfp.distributions
+
+
+class ParametricDistribution(abc.ABC):
+  """Abstract class for parametric (action) distribution."""
+
+  def __init__(self,
+               param_size,
+               create_dist):
+    """Abstract class for parametric (action) distribution.
+
+    Specifies how to transform distribution parameters (i.e. actor output)
+    into a distribution over actions.
+
+    Args:
+      param_size: Size of the parameters for the distribution
+      create_dist: Function from parameters to tf Distribution.
+    """
+    self._param_size = param_size
+    self._create_dist = create_dist
+
+  @property
+  def create_dist(self):
+    return self._create_dist
+
+  def __call__(self, params):
+    return self.create_dist(params)
+
+  @property
+  def param_size(self):
+    return self._param_size
+
+  @property
+  def reparametrizable(self):
+    return self._create_dist(tf.zeros(
+        (self._param_size,
+        ))).reparameterization_type == tfd.FULLY_REPARAMETERIZED
+
+  def postprocess(self, unused_event):
+    NotImplementedError('This function is deprecated.')
+
+  def inverse_postprocess(self, unused_event):
+    NotImplementedError('This function is deprecated.')
+
+  def sample(self, parameters):
+    return self._create_dist(parameters).sample()
+
+  def log_prob(self, parameters, actions):
+    return self._create_dist(parameters).log_prob(actions)
+
+  def entropy(self, parameters):
+    """Return the entropy of the given distribution."""
+    return self._create_dist(parameters).entropy()
+
+  def kl_divergence(self, parameters_a, parameters_b):
+    """Return KL divergence between the two distributions."""
+    dist_a = self._create_dist(parameters_a)
+    dist_b = self._create_dist(parameters_b)
+    return tfd.kl_divergence(dist_a, dist_b)
 
 
 def categorical_distribution(n_actions, dtype):
@@ -40,7 +100,7 @@ def categorical_distribution(n_actions, dtype):
   def create_dist(parameters):
     return tfd.Categorical(logits=parameters, dtype=dtype)
 
-  return (n_actions, create_dist)
+  return ParametricDistribution(n_actions, create_dist)
 
 
 def multi_categorical_distribution(n_dimensions, n_actions_per_dim, dtype):
@@ -63,7 +123,7 @@ def multi_categorical_distribution(n_dimensions, n_actions_per_dim, dtype):
         tfd.Categorical(logits=logits, dtype=dtype),
         reinterpreted_batch_ndims=1)
 
-  return (n_dimensions * n_actions_per_dim, create_dist)
+  return ParametricDistribution(n_dimensions * n_actions_per_dim, create_dist)
 
 
 # NB: This distribution has no gradient w.r.t the action close to boundaries.
@@ -111,6 +171,9 @@ class TanhTransformedDistribution(tfd.TransformedDistribution):
   def mode(self):
     return self.bijector.forward(self.distribution.mode())
 
+  def mean(self):
+    return self.bijector.forward(self.distribution.mean())
+
   def entropy(self, seed=None):
     # We return an estimation using a single sample of the log_det_jacobian.
     # We can still do some backpropagation with this estimate.
@@ -134,7 +197,7 @@ def normal_tanh_distribution(num_actions, min_std=1e-3):
     return tfd.Independent(
         TanhTransformedDistribution(normal_dist), reinterpreted_batch_ndims=1)
 
-  return (2 * num_actions, create_dist)
+  return ParametricDistribution(2 * num_actions, create_dist)
 
 
 def deterministic_tanh_distribution(num_actions):
@@ -144,37 +207,33 @@ def deterministic_tanh_distribution(num_actions):
         TanhTransformedDistribution(tfd.Deterministic(loc=parameters)),
         reinterpreted_batch_ndims=1)
 
-  return (num_actions, create_dist)
+  return ParametricDistribution(num_actions, create_dist)
 
 
-def joint_distribution(params_sizes_and_distributions,
+def joint_distribution(parametric_distributions,
                        dtype_override=tf.float32):
   """Initialize the distribution.
 
   Args:
-    params_sizes_and_distributions: A list of parameter sizes and distribution
-      functions.
+    parametric_distributions: A list of ParametricDistributions.
     dtype_override: The type to output the actions in.
 
   Returns:
     A tuple (param size, fn(params) -> distribution)
   """
   param_sizes = [
-      param_size for (param_size, _) in params_sizes_and_distributions
-  ]
-  distribution_fns = [
-      dist_fn for (_, dist_fn) in params_sizes_and_distributions
+      dist.param_size for dist in parametric_distributions
   ]
 
   def create_dist(parameters):
     split_params = tf.split(parameters, param_sizes, axis=-1)
     dists = [
-        dist_fn(param)
-        for (dist_fn, param) in zip(distribution_fns, split_params)
+        dist(param)
+        for (dist, param) in zip(parametric_distributions, split_params)
     ]
     return tfd.Blockwise(dists, dtype_override=dtype_override)
 
-  return sum(param_sizes), create_dist
+  return ParametricDistribution(sum(param_sizes), create_dist)
 
 
 def check_multi_discrete_space(space):

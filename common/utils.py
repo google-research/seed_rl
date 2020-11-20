@@ -634,6 +634,8 @@ class ProgressLogger(object):
     if step_cnt == self.last_log_step:
       return
     values = self.ready_values.read_value().numpy()
+    if values[0] == -1:
+      return
     assert len(values) == len(
         self.log_keys
     ), 'Mismatch between number of keys and values to log: %r vs %r' % (
@@ -651,9 +653,13 @@ class ProgressLogger(object):
     self.last_log_time, self.last_log_step = logging_time, step_cnt
 
   def _logging_loop(self):
+    """Loop being run in a separate thread."""
     last_log_try = timeit.default_timer()
     while not self.terminator.isSet():
-      self._log()
+      try:
+        self._log()
+      except Exception:  
+        logging.fatal('Logging failed.', exc_info=True)
       now = timeit.default_timer()
       elapsed = now - last_log_try
       last_log_try = now

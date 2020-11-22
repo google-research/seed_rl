@@ -118,6 +118,9 @@ class Server(object):
 class Client(object):
   """A TensorFlow gRPC client."""
 
+  # Disable pytype attribute checking.
+  _HAS_DYNAMIC_ATTRIBUTES = True
+
   def __init__(self, server_address):
     """Creates and starts the gRPC client.
 

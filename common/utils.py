@@ -174,13 +174,14 @@ class UnrollStore(tf.Module):
     tf.debugging.assert_equal(
         tf.shape(env_ids),
         tf.shape(tf.unique(env_ids)[0]),
-        message='Duplicate environment ids')
+        message=f'Duplicate environment ids in store {self.name}')
     
     tf.nest.map_structure(
         lambda s: tf.debugging.assert_equal(
             tf.shape(env_ids)[0],
             tf.shape(s)[0],
-            message='Batch dimension must equal the number of environments.'),
+            message=(f'Batch dimension must equal the number of environments '
+                     f'in store {self.name}.')),
         values)
     
 
@@ -515,7 +516,7 @@ class Aggregator(tf.Module):
                                  self._state)
 
   @tf.Module.with_name_scope
-  def replace(self, env_ids, values):
+  def replace(self, env_ids, values, debug_op_name='', debug_tensors=None):
     """Replaces the state associated to the given environments.
 
     Args:
@@ -524,11 +525,20 @@ class Aggregator(tf.Module):
         first dimension that must either have the same size as 'env_ids', or
         should not exist (in which case, the value is broadcasted to all
         environment ids).
+      debug_op_name: Debug name for the operation.
+      debug_tensors: List of tensors to print when the assert fails.
     """
-    tf.debugging.assert_equal(
-        tf.shape(env_ids),
-        tf.shape(tf.unique(env_ids)[0]),
-        message=f'Duplicate environment ids in Aggregator: {self.name}')
+    tf.debugging.assert_rank(
+        env_ids, 1,
+        message=f'Invalid rank for aggregator {self.name}')
+    tf.debugging.Assert(
+        tf.reduce_all(tf.equal(
+            tf.shape(env_ids), tf.shape(tf.unique(env_ids)[0]))),
+        data=[env_ids,
+              (f'Duplicate environment ids in Aggregator: {self.name} with '
+               f'op name "{debug_op_name}"')] + (debug_tensors or []),
+        summarize=4096,
+        name=f'assert_no_dups_{self.name}')
     tf.nest.assert_same_structure(values, self._state)
     for s, v in zip(tf.nest.flatten(self._state), tf.nest.flatten(values)):
       s.scatter_update(tf.IndexedSlices(v, env_ids))

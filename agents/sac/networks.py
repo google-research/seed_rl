@@ -79,16 +79,15 @@ class ActorCriticMLP(tf.Module):
         observation field is used by this agent. It should have the shape
         [time, batch_size, observation_size].
       prev_action: [time, batch_size, action_size] tensor with previous actions
-        taken in the environment (after postprocessing). Not used by this
-        agent.
+        taken in the environment. Not used by this agent.
       state: Agent state at the first timestep. Not used by this agent.
       action: [time, batch_size, action_size] tensor with actions for which we
-        compute Q-values (before postprocessing).
+        compute Q-values.
     Returns:
       [time, batch_size, n_critics] tensor with state-action values.
     """
     obs = self._concat_obs(env_output.observation)
-    action = tf.cast(self._action_distribution.postprocess(action), tf.float32)
+    action = tf.cast(action, tf.float32)
     if len(action.shape) < len(obs.shape):
       # 0-dimensional actions
       action = action[..., tf.newaxis]
@@ -123,7 +122,7 @@ class ActorCriticMLP(tf.Module):
     return self.__call__(*args, **kwargs)
 
   def __call__(self, prev_action, env_output, state, unroll=False,
-               is_training=False, postprocess_action=True):
+               is_training=False):
     """Runs the agent.
 
     Args:
@@ -132,14 +131,12 @@ class ActorCriticMLP(tf.Module):
       state: Not used. See get_Q above.
       unroll: Should be True if inputs contain the time dimension and False
         otherwise.
-      is_training: If True, the actions are not going to be postprocessed.
+      is_training: Unused.
     Returns:
       action taken and new agent state.
     """
     action_params = self.get_action_params(prev_action, env_output, state)
     action = self._action_distribution.sample(action_params)
-    if postprocess_action:
-      action = self._action_distribution.postprocess(action)
     return action, ()
 
 
@@ -298,10 +295,10 @@ class ActorCriticLSTM(tf.Module):
         shapes start with [time, batch_size]. The done field denotes *before*
         which timesteps to reset the hidden state.
       prev_action: [time, batch_size, action_size] tensor with previous actions
-        taken in the environment (after postprocessing).
+        taken in the environment.
       state: Agent state at the first timestep.
       action: [time, batch_size, action_size] tensor with actions for which we
-        compute Q-values (before postprocessing).
+        compute Q-values.
     Returns:
       [time, batch_size, n_critics] tensor with state-action values.
     """
@@ -309,10 +306,7 @@ class ActorCriticLSTM(tf.Module):
     if len(action.shape) < len(obs.shape):
       # 0-dimensional actions
       action = action[..., tf.newaxis]
-    ff_input = tf.concat(values=[
-        obs,
-        tf.cast(self._action_distribution.postprocess(action), tf.float32)],
-                         axis=-1)
+    ff_input = tf.concat(values=[obs, tf.cast(action, tf.float32)], axis=-1)
     q_values = [self._run_net(net, prev_action, env_output, state=net_state,
                               ff_input=ff_input)[0]
                 for (net, net_state) in zip(self._q_nets, state[2:])]
@@ -347,8 +341,12 @@ class ActorCriticLSTM(tf.Module):
   def get_action(self, *args, **kwargs):
     return self.__call__(*args, **kwargs)
 
-  def __call__(self, prev_action, env_output, state, unroll=False,
-               is_training=False, postprocess_action=True):
+  def __call__(self,
+               prev_action,
+               env_output,
+               state,
+               unroll=False,
+               is_training=False):
     """Runs the agent.
 
     Args:
@@ -357,7 +355,7 @@ class ActorCriticLSTM(tf.Module):
       state: See get_Q above.
       unroll: Should be True if inputs contain the time dimension and False
         otherwise.
-      is_training: If True, the actions are not going to be postprocessed.
+      is_training: Unused.
     Returns:
       action taken and new agent state.
     """
@@ -370,9 +368,6 @@ class ActorCriticLSTM(tf.Module):
     if not unroll:
       # Remove time dimension.
       action = tf.nest.map_structure(lambda t: tf.squeeze(t, 0), action)
-
-    if postprocess_action:
-      action = self._action_distribution.postprocess(action)
 
     return action, state
 

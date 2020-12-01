@@ -23,8 +23,8 @@ by Espeholt, Soyer, Munos et al.
 
 from absl.testing import parameterized
 import numpy as np
+from seed_rl.common import parametric_distribution
 from seed_rl.common import vtrace
-from seed_rl.common.parametric_distribution import CategoricalDistribution
 import tensorflow as tf
 
 
@@ -95,7 +95,8 @@ class LogProbsFromLogitsAndActionsTest(tf.test.TestCase,
     actions = np.random.randint(
         0, num_actions - 1, size=(seq_len, batch_size), dtype=np.int32)
 
-    categorical_distribution = CategoricalDistribution(num_actions, 'int32')
+    categorical_distribution = parametric_distribution.categorical_distribution(
+        num_actions, 'int32')
     action_log_probs_tensor = categorical_distribution.log_prob(
         policy_logits, actions)
 

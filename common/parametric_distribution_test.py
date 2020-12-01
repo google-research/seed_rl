@@ -40,10 +40,12 @@ class ParametricDistributionTest(tf.test.TestCase):
         self.create_tuple_space())
 
     batch_shape = [3, 2]
-    parameters_shape = [3*2 + 3*4]
+    parameters_shape = [3 * 2 + 3 * 4]
 
     parameters = tf.zeros(batch_shape + parameters_shape)
-    self.assertEqual(joint_distribution.entropy(parameters).shape, batch_shape)
+    self.assertFalse(joint_distribution.reparametrizable)
+    self.assertEqual(
+        joint_distribution(parameters).entropy().shape, batch_shape)
 
   def test_joint_distribution_logprob(self):
     joint_distribution = parametric_distribution.get_parametric_distribution_for_action_space(
@@ -65,50 +67,21 @@ class ParametricDistributionTest(tf.test.TestCase):
     continuous_actions = actions[:, :3]
     discrete_actions = actions[:, 3:]
 
-    actions = joint_distribution.inverse_postprocess(actions)
-    log_probs = joint_distribution.log_prob(
-        parameters, actions)
+    log_probs = joint_distribution(parameters).log_prob(actions)
 
-    create_normaltanh_dist = parametric_distribution.get_parametric_distribution_for_action_space(
+    normaltanh_dist = parametric_distribution.get_parametric_distribution_for_action_space(
         self.create_box_space())
     continuous_parameters = parameters[:6]
-    continuous_actions = create_normaltanh_dist.inverse_postprocess(
+    continuous_log_probs = normaltanh_dist(continuous_parameters).log_prob(
         continuous_actions)
-    continuous_log_probs = create_normaltanh_dist.log_prob(
-        continuous_parameters, continuous_actions)
 
-    create_multidiscrete_dist = parametric_distribution.get_parametric_distribution_for_action_space(
+    multidiscrete_dist = parametric_distribution.get_parametric_distribution_for_action_space(
         self.create_multidiscrete_space())
     discrete_parameters = tf.convert_to_tensor(parameters[6:])
-    discrete_actions = create_multidiscrete_dist.inverse_postprocess(
+    discrete_log_probs = multidiscrete_dist(discrete_parameters).log_prob(
         discrete_actions)
-    discrete_log_probs = create_multidiscrete_dist.log_prob(
-        discrete_parameters, discrete_actions)
 
     self.assertAllClose(log_probs, continuous_log_probs + discrete_log_probs)
-
-  def test_normal_clipped_distribution_logprob(self):
-    config = parametric_distribution.ContinuousDistributionConfig(
-        postprocessor=parametric_distribution.ClippedIdentity())
-    distribution = (
-        parametric_distribution.get_parametric_distribution_for_action_space(
-            self.create_box_space(), continuous_config=config))
-    locs = [0., 0., 0.]
-    scale = [.1, .2, .3]
-    parameters = np.array(locs + scale, np.float32)
-    actions = np.array([[0, 0, 0], [0, 0, .99], [0, .99, 0], [.99, 0, 0]],
-                       np.float32)
-
-    actions = distribution.inverse_postprocess(actions)
-    log_probs = distribution.log_prob(parameters, actions)
-
-    min_std = 1e-3
-    # The default is softplus, see argument continuous_safe_exp_std_fn.
-    scale = tf.math.softplus(scale) + min_std
-    continuous_dist = tfd.Normal(loc=locs, scale=scale)
-    continuous_dist = tfd.Independent(continuous_dist, 1)
-
-    self.assertAllClose(log_probs, continuous_dist.log_prob(actions))
 
 
 if __name__ == '__main__':

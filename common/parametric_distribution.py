@@ -16,12 +16,14 @@
 """Parametric distributions over action spaces."""
 
 import abc
-from typing import Callable, Optional
+from typing import Callable
 
 import dataclasses
 import gym
 import tensorflow as tf
 import tensorflow_probability as tfp
+from tensorflow_probability.python.distributions import kullback_leibler
+
 tfb = tfp.bijectors
 tfd = tfp.distributions
 
@@ -31,34 +33,25 @@ class ParametricDistribution(abc.ABC):
 
   def __init__(self,
                param_size,
-               postprocessor,
-               event_ndims,
-               reparametrizable,
-               jacobian_event_ndims=0):
+               create_dist):
     """Abstract class for parametric (action) distribution.
 
     Specifies how to transform distribution parameters (i.e. actor output)
     into a distribution over actions.
 
     Args:
-      param_size: size of the parameters for the distribution
-      postprocessor: tfp.bijector which is applied after sampling
-      (in practice, it's tanh or identity)
-      event_ndims: rank of the distribution sample (i.e. action)
-      reparametrizable: is the distribution reparametrizable
-      jacobian_event_ndims: rank of the action for the jacobian computation.
+      param_size: Size of the parameters for the distribution
+      create_dist: Function from parameters to tf Distribution.
     """
     self._param_size = param_size
-    self._postprocessor = postprocessor  # tfp.bijector
-    self._event_ndims = event_ndims  # rank of events
-    self._jacobian_event_ndims = jacobian_event_ndims
-    self._reparametrizable = reparametrizable
-    assert event_ndims in [0, 1]
+    self._create_dist = create_dist
 
-  @abc.abstractmethod
-  def create_dist(self, parameters):
-    """Creates tfp.distribution from parameters."""
-    pass
+  @property
+  def create_dist(self):
+    return self._create_dist
+
+  def __call__(self, params):
+    return self.create_dist(params)
 
   @property
   def param_size(self):
@@ -66,110 +59,147 @@ class ParametricDistribution(abc.ABC):
 
   @property
   def reparametrizable(self):
-    return self._reparametrizable
-
-  def postprocess(self, event):
-    return self._postprocessor.forward(event)
-
-  def inverse_postprocess(self, event):
-    return self._postprocessor.inverse(event)
+    return self._create_dist(tf.zeros(
+        (self._param_size,
+        ))).reparameterization_type == tfd.FULLY_REPARAMETERIZED
 
   def sample(self, parameters):
-    return self.create_dist(parameters).sample()
+    return self._create_dist(parameters).sample()
 
   def log_prob(self, parameters, actions):
-    """Compute the log probability of the actions.
-
-    Args:
-      parameters: Tensor of parameters for the probability function.
-      actions: Tensor of actions before postprocessing.
-    Returns:
-      Tensor of log probabilities, or logs of the density function if the
-        actions are continuous.
-    """
-    dist = self.create_dist(parameters)
-    log_probs = dist.log_prob(actions)
-    log_probs -= self._postprocessor.forward_log_det_jacobian(
-        tf.cast(actions, tf.float32), event_ndims=self._jacobian_event_ndims)
-    if self._event_ndims == 1:
-      log_probs = tf.reduce_sum(log_probs, axis=-1)  # sum over action dimension
-    return log_probs
+    return self._create_dist(parameters).log_prob(actions)
 
   def entropy(self, parameters):
     """Return the entropy of the given distribution."""
-    dist = self.create_dist(parameters)
-    entropy = dist.entropy()
-    entropy += self._postprocessor.forward_log_det_jacobian(
-        tf.cast(dist.sample(), tf.float32),
-        event_ndims=self._jacobian_event_ndims)
-    if self._event_ndims == 1:
-      entropy = tf.reduce_sum(entropy, axis=-1)
-    return entropy
+    return self._create_dist(parameters).entropy()
 
   def kl_divergence(self, parameters_a, parameters_b):
     """Return KL divergence between the two distributions."""
-    dist_a = self.create_dist(parameters_a)
-    dist_b = self.create_dist(parameters_b)
-    kl = tfd.kl_divergence(dist_a, dist_b)
-    if self._event_ndims == 1:
-      kl = tf.reduce_sum(kl, axis=-1)
-    return kl
+    dist_a = self._create_dist(parameters_a)
+    dist_b = self._create_dist(parameters_b)
+    return tfd.kl_divergence(dist_a, dist_b)
 
 
-class CategoricalDistribution(ParametricDistribution):
-  """Categorical action distribution."""
+def categorical_distribution(n_actions, dtype):
+  """Initialize the categorical distribution.
 
-  def __init__(self, n_actions, dtype):
+  Args:
+    n_actions: the number of actions available.
+    dtype: dtype of actions, usually int32 or int64.
+
+  Returns:
+    A tuple (param size, fn(params) -> distribution)
+  """
+
+  def create_dist(parameters):
+    return tfd.Categorical(logits=parameters, dtype=dtype)
+
+  return ParametricDistribution(n_actions, create_dist)
+
+
+def multi_categorical_distribution(n_dimensions, n_actions_per_dim, dtype):
+  """Initialize the categorical distribution.
+
+  Args:
+    n_dimensions: the dimensionality of actions.
+    n_actions_per_dim: number of actions available per dimension.
+    dtype: dtype of actions, usually int32 or int64.
+
+  Returns:
+    A tuple (param size, fn(params) -> distribution)
+  """
+
+  def create_dist(parameters):
+    batch_shape = parameters.shape[:-1]
+    logits_shape = [n_dimensions, n_actions_per_dim]
+    logits = tf.reshape(parameters, batch_shape + logits_shape)
+    return tfd.Independent(
+        tfd.Categorical(logits=logits, dtype=dtype),
+        reinterpreted_batch_ndims=1)
+
+  return ParametricDistribution(n_dimensions * n_actions_per_dim, create_dist)
+
+
+# NB: This distribution has no gradient w.r.t the action close to boundaries.
+class TanhTransformedDistribution(tfd.TransformedDistribution):
+  """Distribution followed by tanh."""
+
+  def __init__(self, distribution, threshold=.999, validate_args=False):
     """Initialize the distribution.
 
     Args:
-      n_actions: the number of actions available.
-      dtype: dtype of actions, usually int32 or int64.
+      distribution: The distribution to transform.
+      threshold: Clipping value of the action when computing the logprob.
+      validate_args: Passed to super class.
     """
     super().__init__(
-        param_size=n_actions, postprocessor=tfb.Identity(), event_ndims=0,
-        reparametrizable=False)
-    self._dtype = dtype
+        distribution=distribution,
+        bijector=tfp.bijectors.Tanh(),
+        validate_args=validate_args)
+    # Computes the log of the average probability distribution outside the
+    # clipping range, i.e. on the interval [-inf, -atanh(threshold)] for
+    # log_prob_left and [atanh(threshold), inf] for log_prob_right.
+    self._threshold = threshold
+    inverse_threshold = self.bijector.inverse(threshold)
+    # Let epsilon = 1 - threshold
+    # average(pdf) on [threshold, 1] = probability([threshold, 1])/epsilon
+    # So log(average(pdf)) = log(probability) - log(epsilon)
+    log_epsilon = tf.math.log(1. - threshold)
+    # Those 2 values are differentiable w.r.t. model parameters, such that the
+    # gradient is defined everywhere.
+    # There won't be any gradient w.r.t the action though.
+    self._log_prob_left = self.distribution.log_cdf(
+        -inverse_threshold) - log_epsilon
+    self._log_prob_right = self.distribution.log_survival_function(
+        inverse_threshold) - log_epsilon
 
-  def create_dist(self, parameters):
-    return tfd.Categorical(logits=parameters, dtype=self._dtype)
+  def log_prob(self, event):
+    # Without this clip there would be NaNs in the inner tf.where and that
+    # causes issues for some reasons.
+    event = tf.clip_by_value(event, -self._threshold, self._threshold)
+    # The inverse image of {threshold} is the interval [atanh(threshold), inf]
+    # which has a probability of "log_prob_right" under the given distribution.
+    return tf.where(
+        event <= -self._threshold, self._log_prob_left,
+        tf.where(event >= self._threshold, self._log_prob_right,
+                 super().log_prob(event)))
+
+  def mode(self):
+    return self.bijector.forward(self.distribution.mode())
+
+  def mean(self):
+    return self.bijector.forward(self.distribution.mean())
+
+  def entropy(self, seed=None):
+    # We return an estimation using a single sample of the log_det_jacobian.
+    # We can still do some backpropagation with this estimate.
+    return self.distribution.entropy() + self.bijector.forward_log_det_jacobian(
+        self.distribution.sample(seed=seed), event_ndims=0)
 
 
-class MultiCategoricalDistribution(ParametricDistribution):
-  """Multidimensional categorical distribution."""
-
-  def __init__(self, n_dimensions, n_actions_per_dim, dtype):
-    """Initialize multimodal categorical distribution.
-
-    Args:
-      n_dimensions: the dimensionality of actions.
-      n_actions_per_dim: number of actions available per dimension.
-      dtype: dtype of actions, usually int32 or int64.
-    """
-    super().__init__(
-        param_size=n_dimensions * n_actions_per_dim,
-        postprocessor=tfb.Identity(),
-        event_ndims=1,
-        reparametrizable=False)
-    self._n_dimensions = n_dimensions
-    self._n_actions_per_dim = n_actions_per_dim
-    self._dtype = dtype
-
-  def create_dist(self, parameters):
-    batch_shape = parameters.shape[:-1]
-    logits_shape = [self._n_dimensions, self._n_actions_per_dim]
-    logits = tf.reshape(parameters, batch_shape + logits_shape)
-    return tfd.Categorical(logits=logits, dtype=self._dtype)
+@kullback_leibler.RegisterKL(TanhTransformedDistribution,
+                             TanhTransformedDistribution)
+def _kl_transformed(a, b, name='kl_transformed'):
+  return kullback_leibler.kl_divergence(
+      a.distribution, b.distribution, name=name)
 
 
-@tf.custom_gradient
-def safe_exp(x):
-  e = tf.exp(tf.clip_by_value(x, -15, 15))
+def softplus_default_std_fn(scale):
+  return tf.nn.softplus(scale) + 1e-3
 
-  def grad(dy):
-    return dy * e
 
-  return e, grad
+def normal_tanh_distribution(num_actions,
+                             gaussian_std_fn=softplus_default_std_fn):
+  """Normal distribution postprocessed by a tanh."""
+
+  def create_dist(parameters):
+    loc, scale = tf.split(parameters, 2, axis=-1)
+    scale = gaussian_std_fn(scale)
+    normal_dist = tfd.Normal(loc=loc, scale=scale)
+    return tfd.Independent(
+        TanhTransformedDistribution(normal_dist), reinterpreted_batch_ndims=1)
+
+  return ParametricDistribution(2 * num_actions, create_dist)
 
 
 class ClippedIdentity(tfb.identity.Identity):
@@ -193,139 +223,54 @@ class ClippedIdentity(tfb.identity.Identity):
     return tf.clip_by_value(x, -1., 1.)
 
 
-class SafeTanh(tfb.Tanh):
-  """Compute Y = Tanh(X, -1, 1).
+def normal_clipped_distribution(num_actions,
+                                gaussian_std_fn=softplus_default_std_fn):
+  """Normal distribution postprocessed by a clipped identity."""
 
-  It's safer than Tanh because it won't return NaNs when inversing with values
-  out of (-1, 1)
-  """
-
-  def __init__(self, validate_args=False, name='safe_tanh'):
-    with tf.name_scope(name) as name:
-      super(SafeTanh, self).__init__(validate_args=validate_args, name=name)
-
-  def _inverse(self, x):
-    return super(SafeTanh, self)._inverse(tf.clip_by_value(x, -.999, .999))
-
-
-def softplus_default_std_fn(scale):
-  return tf.nn.softplus(scale) + 1e-3
-
-
-@dataclasses.dataclass
-class ContinuousDistributionConfig(object):
-  """Configuration for continuous distributions.
-
-  Currently, only NormalSquashedDistribution is supported. The default
-  configuration corresponds to a normal distribution (with standard deviation
-  computed from params using an unshifted softplus offset by 1e-3),
-  followed by tanh.
-  """
-  # Transforms parameters into non-negative values for standard deviation of the
-  # gaussian.
-  gaussian_std_fn: Callable[[tf.Tensor], tf.Tensor] = softplus_default_std_fn
-  # The squashing postprocessor, e.g. ClippedIdentity or SafeTanh.
-  postprocessor: tfb.bijector.Bijector = SafeTanh()
-
-
-class NormalSquashedDistribution(ParametricDistribution):
-  """Normal distribution followed by squashing (tanh by default).
-
-  We apply tanh (or clipping) to gaussian actions to bound them. Normally we
-  would use tfd.TransformedDistribution to automatically apply squashing to the
-  distribution. We do not do it here because of tanh saturation which would
-  make log_prob computations impossible. Instead, most of the code operates on
-  pre-squashed actions and we take the postprocessor jacobian into account in
-  log_prob computations.
-  """
-
-  def __init__(self,
-               event_size,
-               config: Optional[ContinuousDistributionConfig] = None):
-    """Initialize the distribution.
-
-    Args:
-      event_size: the size of events (i.e. actions).
-      config: Configuration, default configuration when None is passed.
-    """
-    if config is None:
-      config = ContinuousDistributionConfig()
-    super().__init__(
-        param_size=2 * event_size,
-        postprocessor=config.postprocessor,
-        event_ndims=1,
-        reparametrizable=True)
-    self._std_fn = config.gaussian_std_fn
-
-  def create_dist(self, parameters):
+  def create_dist(parameters):
     loc, scale = tf.split(parameters, 2, axis=-1)
-    scale = self._std_fn(scale)
-    dist = tfd.Normal(loc=loc, scale=scale)
-    return dist
+    scale = gaussian_std_fn(scale)
+    normal_dist = tfd.Normal(loc=loc, scale=scale)
+    return tfd.Independent(
+        ClippedIdentity(normal_dist), reinterpreted_batch_ndims=1)
+
+  return ParametricDistribution(2 * num_actions, create_dist)
 
 
+def deterministic_tanh_distribution(num_actions):
 
-class JointDistribution(ParametricDistribution):
-  """Distribution which mixes NormalTanh and Multicategorical."""
+  def create_dist(parameters):
+    return tfd.Independent(
+        TanhTransformedDistribution(tfd.Deterministic(loc=parameters)),
+        reinterpreted_batch_ndims=1)
 
-  def __init__(self,
-               continuous_event_size,
-               n_discrete_dimensions,
-               n_discrete_actions_per_dim,
-               discrete_dtype,
-               min_std=0.001):
-    """Initialize the distribution.
+  return ParametricDistribution(num_actions, create_dist)
 
-    Args:
-      continuous_event_size: the size of continuous events (i.e. actions).
-      n_discrete_dimensions: the dimensionality of discrete actions.
-      n_discrete_actions_per_dim: number of discrete actions available per
-        dimension.
-      discrete_dtype: dtype of discrete actions, usually int32 or int64.
-      min_std: minimum std for the gaussian.
-    """
-    super().__init__(
-        param_size=2 * continuous_event_size +
-        n_discrete_dimensions * n_discrete_actions_per_dim,
-        postprocessor=tfb.Blockwise(
-            [tfb.Tanh(), tfb.Identity()],
-            block_sizes=[continuous_event_size, n_discrete_dimensions]),
-        event_ndims=0,
-        reparametrizable=True,
-        # We need to set the jacobian_event_ndims to 1 for the Blockwise
-        # post-processor to split the last dimension.
-        jacobian_event_ndims=1)
-    self._continuous_event_size = continuous_event_size
-    self._n_discrete_dimensions = n_discrete_dimensions
-    self._n_discrete_actions_per_dim = n_discrete_actions_per_dim
-    self._discrete_dtype = discrete_dtype
-    self._min_std = min_std
 
-  def create_dist(self, parameters):
-    continuous_params, discrete_params = tf.split(
-        parameters, [
-            2 * self._continuous_event_size,
-            self._n_discrete_dimensions * self._n_discrete_actions_per_dim
-        ],
-        axis=-1)
+def joint_distribution(parametric_distributions,
+                       dtype_override=tf.float32):
+  """Initialize the distribution.
 
-    loc, scale = tf.split(continuous_params, 2, axis=-1)
-    scale = tf.math.softplus(scale) + self._min_std
-    continuous_dist = tfd.Normal(loc=loc, scale=scale)
-    continuous_dist = tfd.Independent(continuous_dist, 1)
+  Args:
+    parametric_distributions: A list of ParametricDistributions.
+    dtype_override: The type to output the actions in.
 
-    batch_shape = discrete_params.shape[:-1]
-    discrete_logits_shape = [
-        self._n_discrete_dimensions, self._n_discrete_actions_per_dim
+  Returns:
+    A tuple (param size, fn(params) -> distribution)
+  """
+  param_sizes = [
+      dist.param_size for dist in parametric_distributions
+  ]
+
+  def create_dist(parameters):
+    split_params = tf.split(parameters, param_sizes, axis=-1)
+    dists = [
+        dist(param)
+        for (dist, param) in zip(parametric_distributions, split_params)
     ]
-    discrete_logits = tf.reshape(discrete_params,
-                                 batch_shape + discrete_logits_shape)
-    discrete_dist = tfd.Categorical(
-        logits=discrete_logits, dtype=self._discrete_dtype)
-    discrete_dist = tfd.Independent(discrete_dist, 1)
+    return tfd.Blockwise(dists, dtype_override=dtype_override)
 
-    return tfd.Blockwise([continuous_dist, discrete_dist],
-                         dtype_override=tf.float32)
+  return ParametricDistribution(sum(param_sizes), create_dist)
 
 
 def check_multi_discrete_space(space):
@@ -343,45 +288,56 @@ def check_box_space(space):
         f'Learner only supports actions bounded to [-1,1]: {space.high}')
 
 
-def get_parametric_distribution_for_action_space(
-    action_space,
-    continuous_config: Optional[ContinuousDistributionConfig] = None):
+def get_parametric_distribution_for_action_space(action_space,
+                                                 continuous_config=None):
   """Returns an action distribution parametrization based on the action space.
 
   Args:
     action_space: action space of the environment
     continuous_config: Configuration for the continuous action distribution
-      (used when needed by the action space).
+      (used when needed by the action space)..
   """
   if isinstance(action_space, gym.spaces.Discrete):
-    return CategoricalDistribution(action_space.n,
-                                   dtype=action_space.dtype)
+    return categorical_distribution(action_space.n, dtype=action_space.dtype)
   elif isinstance(action_space, gym.spaces.MultiDiscrete):
     check_multi_discrete_space(action_space)
-    return MultiCategoricalDistribution(
+    return multi_categorical_distribution(
         n_dimensions=len(action_space.nvec),
         n_actions_per_dim=action_space.nvec[0],
         dtype=action_space.dtype)
   elif isinstance(action_space, gym.spaces.Box):  # continuous actions
     check_box_space(action_space)
-    return NormalSquashedDistribution(
-        event_size=action_space.shape[0], config=continuous_config)
+    if continuous_config is None:
+      continuous_config = ContinuousDistributionConfig()
+    if continuous_config.postprocessor == 'Tanh':
+      return normal_tanh_distribution(
+          num_actions=action_space.shape[0],
+          gaussian_std_fn=continuous_config.gaussian_std_fn)
+    elif continuous_config.postprocessor == 'ClippedIdentity':
+      return normal_clipped_distribution(
+          num_actions=action_space.shape[0],
+          gaussian_std_fn=continuous_config.gaussian_std_fn)
+    else:
+      raise ValueError(
+          f'Postprocessor {continuous_config.postprocessor} not supported.')
   elif isinstance(action_space, gym.spaces.Tuple):  # mixed actions
-    assert len(action_space) == 2, action_space
-
-    continuous_space, discrete_space = action_space
-    assert isinstance(continuous_space, gym.spaces.Box), continuous_space
-    check_box_space(continuous_space)
-    assert isinstance(discrete_space, gym.spaces.MultiDiscrete), discrete_space
-    check_multi_discrete_space(discrete_space)
-
-    return JointDistribution(
-        continuous_event_size=continuous_space.shape[0],
-        n_discrete_dimensions=len(discrete_space.nvec),
-        n_discrete_actions_per_dim=discrete_space.nvec[0],
-        discrete_dtype=discrete_space.dtype)
+    return joint_distribution([
+        get_parametric_distribution_for_action_space(subspace,
+                                                     continuous_config)
+        for subspace in action_space
+    ])
   else:
     raise ValueError(f'Unsupported action space {action_space}')
+
+
+@tf.custom_gradient
+def safe_exp(x):
+  e = tf.exp(tf.clip_by_value(x, -15, 15))
+
+  def grad(dy):
+    return dy * e
+
+  return e, grad
 
 
 def safe_exp_std_fn(std_for_zero_param: float, min_std):
@@ -396,6 +352,23 @@ def softplus_std_fn(std_for_zero_param: float, min_std: float):
   fn = lambda scale: tf.nn.softplus(scale + std_shift) + min_std
   assert abs(fn(0) - std_for_zero_param) < 1e-3
   return fn
+
+
+@dataclasses.dataclass
+class ContinuousDistributionConfig(object):
+  """Configuration for continuous distributions.
+
+  Currently, only NormalSquashedDistribution is supported. The default
+  configuration corresponds to a normal distribution (with standard deviation
+  computed from params using an unshifted softplus offset by 1e-3),
+  followed by tanh.
+  """
+  # Transforms parameters into non-negative values for standard deviation of the
+  # gaussian.
+  gaussian_std_fn: Callable[[tf.Tensor], tf.Tensor] = softplus_default_std_fn
+  # The squashing postprocessor.
+  # Accepted values are Tanh and ClippedIdentity.
+  postprocessor: str = 'Tanh'
 
 
 def continuous_action_config(
@@ -434,9 +407,5 @@ def continuous_action_config(
     raise ValueError('Flag `action_gaussian_std_fn` only supports safe_exp and'
                      f' softplus, got: {action_gaussian_std_fn}')
 
-  if action_postprocessor == 'ClippedIdentity':
-    config.postprocessor = ClippedIdentity()
-  elif action_postprocessor != 'Tanh':
-    raise ValueError('Flag `action_postprocessor` only supports Tanh and'
-                     f' ClippedIdentity, got: {action_postprocessor}')
+  config.postprocessor = action_postprocessor
   return config

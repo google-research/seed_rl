@@ -118,7 +118,6 @@ def compute_loss(logger, parametric_action_distribution, agent, target_agent,
     rewards = tf.clip_by_value(rewards, -FLAGS.max_abs_reward,
                                FLAGS.max_abs_reward)
 
-  # Networks expect postprocessed prev_actions but it's done during inference.
   inputs = (prev_actions[:-1],
             tf.nest.map_structure(lambda t: t[:-1], env_outputs), agent_state)
   if FLAGS.her_window_length:
@@ -564,8 +563,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     env_infos.add(env_ids, (FLAGS.num_action_repeats, 0., 0.))
 
     # Inference.
-    prev_actions = parametric_action_distribution.postprocess(
-        actions.read(env_ids))
+    prev_actions = actions.read(env_ids)
     input_ = encode((prev_actions, env_outputs))
     prev_agent_states = agent_states.read(env_ids)
     def make_inference_fn(inference_device):
@@ -573,8 +571,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
         with tf.device(inference_device):
           @tf.function
           def agent_inference(*args):
-            return agent(*decode(args), is_training=False,
-                         postprocess_action=False)
+            return agent(*decode(args), is_training=False)
 
           return agent_inference(*input_, prev_agent_states)
 
@@ -602,7 +599,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     actions.replace(env_ids, agent_actions)
 
     # Return environment actions to environments.
-    return parametric_action_distribution.postprocess(agent_actions)
+    return agent_actions
 
   with strategy.scope():
     server.bind(inference)

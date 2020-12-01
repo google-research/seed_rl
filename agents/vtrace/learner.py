@@ -72,15 +72,11 @@ FLAGS = flags.FLAGS
 
 def compute_loss(logger, parametric_action_distribution, agent, agent_state,
                  prev_actions, env_outputs, agent_outputs):
-  # Networks expect postprocessed prev_actions but it's done during inference.
-  # agent((prev_actions[t], env_outputs[t]), agent_state)
-  #   -> agent_outputs[t], agent_state'
   learner_outputs, _ = agent(prev_actions,
                              env_outputs,
                              agent_state,
                              unroll=True,
-                             is_training=True,
-                             postprocess_action=False)
+                             is_training=True)
 
   # Use last baseline value (from the value function) to bootstrap.
   bootstrap_value = learner_outputs.baseline[-1]
@@ -382,15 +378,13 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
           env_infos.add(env_ids, (FLAGS.num_action_repeats, 0., 0.))
 
           # Inference.
-          prev_actions = parametric_action_distribution.postprocess(
-              actions.read(env_ids))
+          prev_actions = actions.read(env_ids)
           input_ = encode((prev_actions, env_outputs))
           prev_agent_states = agent_states.read(env_ids)
           with tf.device(inference_device):
             @tf.function
             def agent_inference(*args):
-              return agent(*decode(args), is_training=False,
-                           postprocess_action=False)
+              return agent(*decode(args), is_training=False)
 
             agent_outputs, curr_agent_states = agent_inference(
                 *input_, prev_agent_states)
@@ -408,8 +402,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
           agent_states.replace(env_ids, curr_agent_states)
           actions.replace(env_ids, agent_outputs.action)
           # Return environment actions to environments.
-          return parametric_action_distribution.postprocess(
-              agent_outputs.action)
+          return agent_outputs.action
 
         return inference
 

@@ -31,9 +31,7 @@ class NetworkTest(tf.test.TestCase):
     obs_size = 15
     action_size = 3
 
-    action_dist = parametric_distribution.NormalSquashedDistribution(
-        action_size,
-        config=parametric_distribution.ContinuousDistributionConfig())
+    action_dist = parametric_distribution.normal_tanh_distribution(action_size)
     agent = networks.ActorCriticLSTM(
         action_dist,
         n_critics=2,

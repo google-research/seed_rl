@@ -14,7 +14,6 @@
 
 """Utility functions/classes."""
 
-import atexit
 import collections
 import pickle
 import threading

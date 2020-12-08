@@ -44,6 +44,7 @@
 #include "tensorflow/core/lib/core/threadpool.h"
 #include "tensorflow/core/lib/gtl/array_slice.h"
 #include "tensorflow/core/platform/protobuf.h"
+#include "tensorflow/core/profiler/lib/traceme.h"
 #include "tensorflow/core/protobuf/struct.pb.h"
 #include "tensorflow/core/util/batch_util.h"
 
@@ -153,8 +154,8 @@ class TensorHandler final {
 
   void Call(ServerContext* ctx, const seed_rl::CallRequest* request,
             seed_rl::CallResponse* response, std::function<void()> callback) {
-    auto outer_callback = [response, callback](
-                              Status status, std::vector<Tensor> rets) {
+    auto outer_callback = [response, callback](Status status,
+                                               std::vector<Tensor> rets) {
       if (status.ok()) {
         TensorProto tp;
         for (const Tensor& t : rets) {
@@ -591,8 +592,7 @@ class DynamicFn : public FnType {
  public:
   DynamicFn(FunctionLibraryRuntime* lib,
             FunctionLibraryRuntime::Handle f_handle,
-            DataTypeVector&& input_types,
-            std::vector<TensorShape> input_shapes,
+            DataTypeVector&& input_types, std::vector<TensorShape> input_shapes,
             std::vector<Tensor>&& captures, GrpcServerResource* resource,
             thread::ThreadPool* tp, bool batched)
       : lib_(lib),
@@ -796,7 +796,7 @@ class DynamicFn : public FnType {
   };
 
   bool DirectCall(ServerContext* server_ctx, gtl::ArraySlice<Tensor> args,
-    std::function<void(Status, std::vector<Tensor>)> callback) {
+                  std::function<void(Status, std::vector<Tensor>)> callback) {
     Status status = verify_args(input_types_, input_shapes_,
                                 /*batching_dims_count=*/0, args);
     if (!status.ok()) {
@@ -941,8 +941,9 @@ class GrpcServerBindOp : public OpKernel {
     func.reset(static_cast<FnType*>(new DynamicFn(
         lib, f_handle, std::move(input_types), input_shapes_,
         std::move(captures), resource, resource->func_tp.get(), batched_)));
-    OP_REQUIRES_OK(ctx, resource->tensor_handler()->Bind(
-        fn_name_, output_specs_, std::move(func), first_bind_));
+    OP_REQUIRES_OK(
+        ctx, resource->tensor_handler()->Bind(fn_name_, output_specs_,
+                                              std::move(func), first_bind_));
   }
 
  private:
@@ -1148,7 +1149,12 @@ class GrpcClientCallOp : public OpKernel {
     }
 
     seed_rl::CallResponse response;
-    OP_REQUIRES_OK(ctx, resource->Call(request, &response));
+    {
+      profiler::TraceMe trace_me([&]() {
+        return absl::StrCat("Function ", fn_name_);
+      });
+      OP_REQUIRES_OK(ctx, resource->Call(request, &response));
+    }
 
     OpOutputList output_list;
     OP_REQUIRES_OK(ctx, ctx->output_list("output_list", &output_list));

@@ -30,6 +30,9 @@ export PYTHONPATH=$PYTHONPATH:/
 
 ACTOR_BINARY="CUDA_VISIBLE_DEVICES='' python3 ../${ENVIRONMENT}/${AGENT}_main.py --run_mode=actor";
 LEARNER_BINARY="python3 ../${ENVIRONMENT}/${AGENT}_main.py --run_mode=learner";
+if [[ "ppo" == "${AGENT}" ]]; then
+  LEARNER_BINARY="${LEARNER_BINARY} --gin_config=../${ENVIRONMENT}/gin/ppo.gin";
+fi
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 tmux new-session -d -t seed_rl

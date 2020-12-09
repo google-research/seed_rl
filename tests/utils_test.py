@@ -23,6 +23,48 @@ from seed_rl.common import utils
 import tensorflow as tf
 
 
+class NonDyingEnvsTest(tf.test.TestCase):
+
+  def test_basic(self):
+    nondying_envs_mask, nondying_env_ids = utils.get_non_dying_envs(
+        envs_needing_reset=tf.constant([], dtype=tf.int32),
+        reset_mask=tf.constant([False, False]),
+        env_ids=tf.constant([0, 1]))
+    self.assertAllEqual(nondying_envs_mask, [True, True])
+    self.assertAllEqual(nondying_env_ids, [0, 1])
+
+  def test_has_resets(self):
+    nondying_envs_mask, nondying_env_ids = utils.get_non_dying_envs(
+        envs_needing_reset=tf.constant([6], dtype=tf.int32),
+        reset_mask=tf.constant([False, True]),
+        env_ids=tf.constant([5, 6]))
+    self.assertAllEqual(nondying_envs_mask, [True, True])
+    self.assertAllEqual(nondying_env_ids, [5, 6])
+
+  def test_has_dying_env(self):
+    nondying_envs_mask, nondying_env_ids = utils.get_non_dying_envs(
+        envs_needing_reset=tf.constant([6], dtype=tf.int32),
+        reset_mask=tf.constant([False, False, True, False]),
+        env_ids=tf.constant([0, 5, 6, 6]))
+    self.assertAllEqual(nondying_envs_mask, [True, True, True, False])
+    self.assertAllEqual(nondying_env_ids, [0, 5, 6])
+
+  def test_repeated_dying_envs(self):
+    with self.assertRaises(tf.errors.InvalidArgumentError):
+      utils.get_non_dying_envs(
+          envs_needing_reset=tf.constant([6], dtype=tf.int32),
+          reset_mask=tf.constant([False, False, False, True, True]),
+          env_ids=tf.constant([0, 5, 6, 6, 6]))
+
+  def test_multiple_new_transitions(self):
+    with self.assertRaises(tf.errors.InvalidArgumentError):
+      utils.get_non_dying_envs(
+          # Such duplicate will happen a given actor has 2 new transitions with
+          # new run IDs (e.g. restarted twice while the same inference batch is
+          # being processed).
+          envs_needing_reset=tf.constant([1, 1], dtype=tf.int32),
+          reset_mask=tf.constant([False, True, True, False]),
+          env_ids=tf.constant([0, 1, 1, 2]))
 
 
 class UnrollStoreTest(tf.test.TestCase):

@@ -1,0 +1,43 @@
+import gin.tf.external_configurables
+# Policy loss
+GeneralizedOnPolicyLoss.policy_loss = @ppo()
+ppo.epsilon = 0.2
+GeneralizedOnPolicyLoss.reward_normalizer = @PopArt()
+PopArt.mean_std_tracker = @AverageMeanStd()
+PopArt.compensate = False
+# Baselines use a different reward normalization scheme: https://github.com/openai/baselines/blob/9b68103b737ac46bc201dfb3121cfa5df2127e53/baselines/common/vec_env/vec_normalize.py
+
+# Policy regularization
+GeneralizedOnPolicyLoss.regularizer = @KLPolicyRegularizer()
+KLPolicyRegularizer.entropy = 0.
+
+# Advantage estimation
+GeneralizedOnPolicyLoss.advantage_estimator = @GAE()
+GeneralizedOnPolicyLoss.discount_factor = 0.99
+lambda = 0.95
+GAE.lambda_ = %lambda
+VTrace.lambda_ = %lambda
+
+# Networks
+ContinuousControlAgent.num_layers_policy = 2
+ContinuousControlAgent.num_units_policy = 64
+ContinuousControlAgent.num_layers_value = 2
+ContinuousControlAgent.num_units_value = 64
+ContinuousControlAgent.activation = @tf.nn.tanh
+ContinuousControlAgent.shared = False
+ContinuousControlAgent.std_independent_of_input = True
+ContinuousControlAgent.kernel_init = @hidden/tf.keras.initializers.Orthogonal()
+ContinuousControlAgent.last_kernel_init_policy = @policy/tf.keras.initializers.Orthogonal()
+ContinuousControlAgent.last_kernel_init_value = @value/tf.keras.initializers.Orthogonal()
+ContinuousControlAgent.observation_normalizer = @InputNormalization()
+InputNormalization.mean_std_tracker = @AverageMeanStd()
+ContinuousControlAgent.input_clipping = 10.
+hidden/tf.keras.initializers.Orthogonal.gain = 1.41421356237  # sqrt(2)
+policy/tf.keras.initializers.Orthogonal.gain = 0.01
+value/tf.keras.initializers.Orthogonal.gain = 1.0
+
+# Other
+create_optimizer.optimizer_fn = @tf.keras.optimizers.Adam
+continuous_action_config.action_min_gaussian_std = 1e-3
+continuous_action_config.action_gaussian_std_fn = 'safe_exp'
+continuous_action_config.action_std_for_zero_param = 1.

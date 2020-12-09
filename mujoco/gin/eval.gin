@@ -1,0 +1,4 @@
+import gin.tf.external_configurables
+# Parametric distribution
+NormalTanhDistribution.min_std = 1e-3
+NormalTanhDistribution.std_fn = @safe_exp

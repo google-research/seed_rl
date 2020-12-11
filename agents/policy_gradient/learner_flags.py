@@ -31,6 +31,8 @@ flags.DEFINE_integer(
     'num_checkpoints', 0,
     'How many checkpoints to generate besides the one created when the training'
     ' is done.')
+flags.DEFINE_integer('save_checkpoint_secs', 0,
+                     'Checkpoint save period in seconds.')
 flags.DEFINE_integer(
     'num_saved_models', 0,
     'How many times to save a model to disk periodically during training. Can'
@@ -203,4 +205,5 @@ def training_config_from_flags() -> learner_config.TrainingConfig:
       num_checkpoints=FLAGS.num_checkpoints,
       num_saved_models=FLAGS.num_saved_models,
       prefetch_batches=FLAGS.prefetch_batches,
-      server_address=FLAGS.server_address)
+      server_address=FLAGS.server_address,
+      save_checkpoint_secs=FLAGS.save_checkpoint_secs)

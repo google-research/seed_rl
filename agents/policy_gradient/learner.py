@@ -546,7 +546,9 @@ class Learner(object):
       self.minimize_loop(tf.constant(1))
       self.logger.start(self.additional_logs)
     current_action_point = 0
+    last_ckpt_time = time.time()
     while True:
+      ckpt_saved = False
       action_point = action_points[current_action_point]
       steps_done = self.training_iterations * self.frames_per_virtual_batch
       if action_point.step <= steps_done:
@@ -559,11 +561,18 @@ class Learner(object):
           self.save_model(eval_id=steps_done.numpy())
         if action_point.checkpoint:
           self.save_checkpoint()
+          ckpt_saved = True
         logging.info('Checkpoint/snapshot at %d steps took %f sec.', steps_done,
                      time.time() - start_time)
         current_action_point += 1
       if steps_done >= self.config.total_environment_frames:
         break
+      if self.config.save_checkpoint_secs:
+        current_time = time.time()
+        if current_time - last_ckpt_time > self.config.save_checkpoint_secs:
+          if not ckpt_saved:
+            self.save_checkpoint()
+          last_ckpt_time = current_time
       # Make sure to run minimize at least once.
       reporting_step += max(FLAGS.log_frequency, self.frames_per_virtual_batch)
       reporting_step = min(reporting_step, action_point.step)

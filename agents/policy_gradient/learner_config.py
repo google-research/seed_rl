@@ -97,6 +97,10 @@ class TrainingConfig(object):
   prefetch_batches: bool = True
   # Whether to store unrolls on inference.
   store_unrolls_on_inference: bool = True
+  # Checkpoint save period in seconds. These checkpoints are in addition to the
+  # regular checkpoints based on the training iterations; see num_checkpoints
+  # above. Set to 0 to disable.
+  save_checkpoint_secs: int = 0
 
   @property
   def num_training_envs(self) -> int:

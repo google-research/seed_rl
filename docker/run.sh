@@ -26,14 +26,20 @@ AGENT=$2
 NUM_ACTORS=$3
 shift 3
 
+ENV_BATCH_SIZE=1
+
 export PYTHONPATH=$PYTHONPATH:/
 
 ACTOR_BINARY="CUDA_VISIBLE_DEVICES='' python3 ../${ENVIRONMENT}/${AGENT}_main.py --run_mode=actor";
 LEARNER_BINARY="python3 ../${ENVIRONMENT}/${AGENT}_main.py --run_mode=learner";
 if [[ "ppo" == "${AGENT}" ]]; then
-  LEARNER_BINARY="${LEARNER_BINARY} --gin_config=../${ENVIRONMENT}/gin/ppo.gin";
+  LEARNER_BINARY="${LEARNER_BINARY} --gin_config=/seed_rl/${ENVIRONMENT}/gin/ppo.gin";
+  export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/root/.mujoco/mjpro150/bin
+  ENV_BATCH_SIZE=12
 fi
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+NUM_ENVS=$(($NUM_ACTORS*$ENV_BATCH_SIZE))
+
 
 tmux new-session -d -t seed_rl
 mkdir -p /tmp/seed_rl
@@ -41,24 +47,25 @@ cat >/tmp/seed_rl/instructions <<EOF
 Welcome to the SEED local training of ${ENVIRONMENT} with ${AGENT}.
 SEED uses tmux for easy navigation between different tasks involved
 in the training process. To switch to a specific task, press CTRL+b, [tab id].
-You can stop training at any time by executing '../stop_local.sh'
+You can stop training at any time by executing 'stop_seed'
 EOF
+tmux send-keys "alias stop_seed='/seed_rl/stop_local.sh seed_rl'" ENTER
 tmux send-keys clear
 tmux send-keys KPEnter
 tmux send-keys "cat /tmp/seed_rl/instructions"
 tmux send-keys KPEnter
 tmux send-keys "python3 check_gpu.py 2> /dev/null"
 tmux send-keys KPEnter
-tmux send-keys "../stop_local.sh"
+tmux send-keys "stop_seed"
 tmux new-window -d -n learner
 
-COMMAND='rm /tmp/agent -Rf; '"${LEARNER_BINARY}"' --logtostderr --pdb_post_mortem '"$@"' --num_envs='"${NUM_ACTORS}"''
+COMMAND='rm /tmp/agent -Rf; '"${LEARNER_BINARY}"' --logtostderr --pdb_post_mortem '"$@"' --num_envs='"${NUM_ENVS}"' --env_batch_size='"${ENV_BATCH_SIZE}"''
 echo $COMMAND
 tmux send-keys -t "learner" "$COMMAND" ENTER
 
 for ((id=0; id<$NUM_ACTORS; id++)); do
     tmux new-window -d -n "actor_${id}"
-    COMMAND=''"${ACTOR_BINARY}"' --logtostderr --pdb_post_mortem '"$@"' --num_envs='"${NUM_ACTORS}"' --task='"${id}"''
+    COMMAND=''"${ACTOR_BINARY}"' --logtostderr --pdb_post_mortem '"$@"' --num_envs='"${NUM_ENVS}"' --task='"${id}"' --env_batch_size='"${ENV_BATCH_SIZE}"''
     tmux send-keys -t "actor_${id}" "$COMMAND" ENTER
 done
 

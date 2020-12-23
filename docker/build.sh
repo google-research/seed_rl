@@ -17,4 +17,8 @@ set -e
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd $DIR/..
 
+if [[ "mujoco" == "${CONFIG}" ]]; then
+  cp ~/.mujoco/mjkey.txt mjkey.txt
+fi
+
 docker build -t seed_rl:${CONFIG} -f docker/Dockerfile.${CONFIG} .

@@ -395,7 +395,6 @@ def continuous_action_config(
   """
   config = ContinuousDistributionConfig()
 
-  # Note: see cl/319488607, which introduced the cast.
   config.min_gaussian_std = float(action_min_gaussian_std)
   if action_gaussian_std_fn == 'safe_exp':
     config.gaussian_std_fn = safe_exp_std_fn(action_std_for_zero_param,

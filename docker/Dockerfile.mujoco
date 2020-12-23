@@ -26,14 +26,11 @@ RUN curl https://www.roboti.us/download/mjpro150_linux.zip --output /tmp/mujoco.
     unzip /tmp/mujoco.zip -d /root/.mujoco && \
     rm -f /tmp/mujoco.zip
 
-# Set library load path
-ENV LD_LIBRARY_PATH $LD_LIBRARY_PATH:/root/.mujoco/mjpro150/bin
-
 # Copy the mujoco license key
 COPY mjkey.txt /root/.mujoco/mjkey.txt
 
 RUN pip3 install Cython cffi lockfile glfw imageio dataclasses gin-config
-RUN pip3 install gym[mujoco]
+RUN LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/root/.mujoco/mjpro150/bin pip3 install gym[mujoco]
 RUN pip3 install tensorflow_probability==0.11.0
 
 # Copy SEED codebase and SEED GRPC binaries.

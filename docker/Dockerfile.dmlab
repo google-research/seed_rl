@@ -71,7 +71,7 @@ RUN mkdir dataset && \
     tr '\r' '\n' | \
     bash
 
-RUN pip3 install gym
+RUN pip3 install gym dataclasses
 RUN pip3 install tensorflow_probability==0.11.0
 
 # Copy SEED codebase and SEED GRPC binaries.

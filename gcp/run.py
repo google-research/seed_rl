@@ -73,7 +73,9 @@ def main(_):
   logging.info(tf_config)
   config = json.loads(tf_config)
   job_type = config.get('task', {}).get('type')
-  os.environ.update({'PYTHONPATH': '/'})
+  os.environ['PYTHONPATH'] = '/'
+  os.environ['LD_LIBRARY_PATH'] = os.environ[
+      'LD_LIBRARY_PATH'] + ':/root/.mujoco/mjpro150/bin'
   executor = concurrent.futures.ThreadPoolExecutor(
       max_workers=FLAGS.actors_per_worker)
   futures = []

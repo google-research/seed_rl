@@ -45,7 +45,7 @@ trainingInput:
     - parameterName: env_name
       type: CATEGORICAL
       categoricalValues:
-      - HalfCheetah-v1
+      - HalfCheetah-v2
     - parameterName: gin_config
       type: CATEGORICAL
       categoricalValues:

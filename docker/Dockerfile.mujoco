@@ -15,6 +15,7 @@ FROM tensorflow/tensorflow:2.3.0-gpu
 
 RUN apt-get update && apt-get install -y \
     libgl1-mesa-dev \
+    libglew-dev \
     libosmesa6-dev \
     patchelf \
     tmux \
@@ -31,9 +32,14 @@ COPY mjkey.txt /root/.mujoco/mjkey.txt
 
 RUN pip3 install Cython cffi lockfile glfw imageio dataclasses gin-config
 RUN LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/root/.mujoco/mjpro150/bin pip3 install gym[mujoco]
+RUN echo 'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/root/.mujoco/mjpro150/bin' >> /root/.bashrc
+
 RUN pip3 install tensorflow_probability==0.11.0
 
 # Copy SEED codebase and SEED GRPC binaries.
 ADD . /seed_rl/
+# Needed for Mujoco to avoid inconsistent symbol definitions.
+RUN rm /usr/include/GL/glext.h && touch /usr/include/GL/glext.h
+
 WORKDIR /seed_rl
 ENTRYPOINT ["python3", "gcp/run.py"]

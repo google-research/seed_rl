@@ -34,7 +34,6 @@ ACTOR_BINARY="CUDA_VISIBLE_DEVICES='' python3 ../${ENVIRONMENT}/${AGENT}_main.py
 LEARNER_BINARY="python3 ../${ENVIRONMENT}/${AGENT}_main.py --run_mode=learner";
 if [[ "ppo" == "${AGENT}" ]]; then
   LEARNER_BINARY="${LEARNER_BINARY} --gin_config=/seed_rl/${ENVIRONMENT}/gin/ppo.gin";
-  export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/root/.mujoco/mjpro150/bin
   ENV_BATCH_SIZE=12
 fi
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"

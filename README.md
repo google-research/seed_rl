@@ -5,13 +5,20 @@ agent where both training and inference are performed on the learner.
 
 <img src="./docs/architecture.gif" alt="Architecture" width="50%" height="50%">
 
-Three agents are implemented:
+Four agents are implemented:
 
 - [IMPALA: Scalable Distributed Deep-RL with Importance Weighted Actor-Learner Architectures](https://arxiv.org/abs/1802.01561)
 
 - [R2D2 (Recurrent Experience Replay in Distributed Reinforcement Learning)](https://openreview.net/forum?id=r1lyTjAqYX)
 
 - [SAC: Soft Actor-Critic](https://arxiv.org/abs/1801.01290)
+
+- [Configurable On-Policy Agent](https://arxiv.org/abs/1910.06591) implementing the following algorithms:
+  - [Vanilla Policy Gradient](https://spinningup.openai.com/en/latest/algorithms/vpg.html)
+  - [Proximal Policy Optimization Algorithms](https://arxiv.org/abs/1707.06347)
+  - [V-trace](https://arxiv.org/abs/1802.01561)
+  - [Advantage-Weighted Regression: Simple and Scalable Off-Policy Reinforcement Learning](https://arxiv.org/abs/1910.00177)
+  - [V-MPO: On-Policy Maximum a Posteriori Policy Optimization for Discrete and Continuous Control](https://arxiv.org/abs/1909.12238)
 
 The code is already interfaced with the following environments:
 
@@ -20,6 +27,8 @@ The code is already interfaced with the following environments:
 - [DeepMind lab](https://github.com/deepmind/lab)
 
 - [Google Research Football](https://github.com/google-research/football)
+
+- [Mujoco](https://github.com/openai/gym/tree/master/gym/envs/mujoco)
 
 However, any reinforcement learning environment using the [gym
 API](https://github.com/openai/gym/blob/master/gym/core.py) can be used.
@@ -81,6 +90,7 @@ machine. You just need to run one of the following commands:
 ./run_local.sh atari r2d2 4
 ./run_local.sh football vtrace 4
 ./run_local.sh dmlab vtrace 4
+./run_local.sh mujoco ppo 4
 ```
 
 It will build a Docker image using SEED source code and start the training

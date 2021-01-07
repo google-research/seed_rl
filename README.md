@@ -159,3 +159,9 @@ Checkpoints and tensorboard event files can be downloaded individually
 [here](https://console.cloud.google.com/storage/browser/seed_rl_external_data_release)
 or as [a single (70GBs) zip
 file](https://storage.cloud.google.com/seed_rl_external_data_release/seed_r2d2_atari_checkpoints.zip).
+
+
+## Additional links
+
+SEED was used as a core infrastructure piece for the [What Matters In On-Policy Reinforcement Learning? A Large-Scale Empirical Study](https://arxiv.org/abs/2006.05990) paper.
+A colab that reproduces plots from the paper can be found [here](https://github.com/google-research/seed_rl/tree/master/mujoco/what_matters_in_on_policy_rl.ipynb).

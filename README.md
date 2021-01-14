@@ -13,12 +13,12 @@ Four agents are implemented:
 
 - [SAC: Soft Actor-Critic](https://arxiv.org/abs/1801.01290)
 
-- [Configurable On-Policy Agent](https://arxiv.org/abs/1910.06591) implementing the following algorithms:
+- [Configurable On-Policy Agent](https://arxiv.org/abs/2006.05990) implementing the following algorithms:
   - [Vanilla Policy Gradient](https://spinningup.openai.com/en/latest/algorithms/vpg.html)
-  - [Proximal Policy Optimization Algorithms](https://arxiv.org/abs/1707.06347)
+  - [PPO: Proximal Policy Optimization](https://arxiv.org/abs/1707.06347)
   - [V-trace](https://arxiv.org/abs/1802.01561)
-  - [Advantage-Weighted Regression: Simple and Scalable Off-Policy Reinforcement Learning](https://arxiv.org/abs/1910.00177)
-  - [V-MPO: On-Policy Maximum a Posteriori Policy Optimization for Discrete and Continuous Control](https://arxiv.org/abs/1909.12238)
+  - [AWR: Advantage-Weighted Regression](https://arxiv.org/abs/1910.00177)
+  - [V-MPO: On-Policy Maximum a Posteriori Policy Optimization](https://arxiv.org/abs/1909.12238)
 
 The code is already interfaced with the following environments:
 

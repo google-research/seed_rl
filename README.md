@@ -83,18 +83,32 @@ cd seed_rl
 ## Local Machine Training on a Single Level
 
 To easily start with SEED we provide a way of running it on a local
-machine. You just need to run one of the following commands:
+machine. You just need to run one of the following commands (adjusting
+`number of actors` and `number of envs. per actor`
+Env. batch size` to your machine):
 
 ```shell
-./run_local.sh [Game] [Agent] [Num. actors]
-./run_local.sh atari r2d2 4
-./run_local.sh football vtrace 4
-./run_local.sh dmlab vtrace 4
-./run_local.sh mujoco ppo 4
+./run_local.sh [Game] [Agent] [number of actors] [number of envs. per actor]
+./run_local.sh atari r2d2 4 4
+./run_local.sh football vtrace 4 1
+./run_local.sh dmlab vtrace 4 4
+./run_local.sh mujoco ppo 4 32 --gin_config=/seed_rl/mujoco/gin/ppo.gin
 ```
 
 It will build a Docker image using SEED source code and start the training
-inside the Docker image.
+inside the Docker image. Note that hyper parameters are not tuned in the runs
+above. Tensorboard is started as part of the training. It can be viewed under
+[http://localhost:6006](http://localhost:6006) by default.
+
+We also provide a sample script for running training with tuned parameters for
+HalfCheetah-v2. This setup runs training with 8x32=256 parallel environments to
+make training faster. The sample complexity can be improved at the cost
+of slower training by running fewer environments and increasing the
+`unroll_length` parameter.
+
+```shell
+./mujoco/local_baseline_HalfCheetah-v2.sh
+```
 
 ## Distributed Training using AI Platform
 

@@ -28,6 +28,14 @@ echo $3 | grep -E -q "^((0|([1-9][0-9]*))|(0x[0-9a-fA-F]+))$" || die "Number of 
 export ENVIRONMENT=$1
 export AGENT=$2
 export NUM_ACTORS=$3
+shift 3
+if [[ $1 ]]; then
+  echo $1 | grep -E -q "^((0|([1-9][0-9]*))|(0x[0-9a-fA-F]+))$" || die "Number of environments per actor should be a non-negative integer without leading zeros"
+  export ENV_BATCH_SIZE=$1
+  shift 1
+else
+  export ENV_BATCH_SIZE=1
+fi
 export CONFIG=$ENVIRONMENT
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -35,7 +43,7 @@ cd $DIR
 docker/build.sh
 docker_version=$(docker version --format '{{.Server.Version}}')
 if [[ "19.03" > $docker_version ]]; then
-  docker run --entrypoint ./docker/run.sh -ti -it --name seed --rm seed_rl:$ENVIRONMENT $ENVIRONMENT $AGENT $NUM_ACTORS
+  docker run --entrypoint ./docker/run.sh -ti -it -p 6006-6015:6006-6015 --name seed --rm seed_rl:$ENVIRONMENT $ENVIRONMENT $AGENT $NUM_ACTORS $ENV_BATCH_SIZE $@
 else
-  docker run --gpus all --entrypoint ./docker/run.sh -ti -it -e HOST_PERMS="$(id -u):$(id -g)" --name seed --rm seed_rl:$ENVIRONMENT $ENVIRONMENT $AGENT $NUM_ACTORS
+  docker run --gpus all --entrypoint ./docker/run.sh -ti -it -p 6006-6015:6006-6015 -e HOST_PERMS="$(id -u):$(id -g)" --name seed --rm seed_rl:$ENVIRONMENT $ENVIRONMENT $AGENT $NUM_ACTORS $ENV_BATCH_SIZE $@
 fi

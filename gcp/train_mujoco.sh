@@ -21,8 +21,8 @@ source $DIR/setup.sh
 export ENVIRONMENT=mujoco
 export CONFIG=mujoco
 export AGENT=ppo
-export WORKERS=32
-export ACTORS_PER_WORKER=20
+export WORKERS=4
+export ACTORS_PER_WORKER=1
 
 cat > /tmp/config.yaml <<EOF
 trainingInput:
@@ -54,7 +54,56 @@ trainingInput:
       type: INTEGER
       minValue: 2000000
       maxValue: 2000000
-      scaleType: UNIT_LOG_SCALE
+      scaleType: NONE
+    - parameterName: batch_mode
+      type: CATEGORICAL
+      categoricalValues:
+      - split
+    - parameterName: epochs_per_step
+      type: INTEGER
+      minValue: 10
+      maxValue: 10
+      scaleType: NONE
+    - parameterName: lr_decay_multiplier
+      type: DOUBLE
+      minValue: 0
+      maxValue: 0
+      scaleType: NONE
+    - parameterName: step_size_transitions
+      type: INTEGER
+      minValue: 2048
+      maxValue: 2048
+      scaleType: NONE
+    - parameterName: batch_size_transitions
+      type: INTEGER
+      minValue: 64
+      maxValue: 64
+      scaleType: NONE
+    - parameterName: unroll_length
+      type: INTEGER
+      minValue: 16
+      maxValue: 16
+      scaleType: NONE
+    - parameterName: learning_rate
+      type: DOUBLE
+      minValue: 0.0003
+      maxValue: 0.0003
+      scaleType: NONE
+    - parameterName: clip_norm
+      type: DOUBLE
+      minValue: 0.5
+      maxValue: 0.5
+      scaleType: NONE
+    - parameterName: batch_size
+      type: INTEGER
+      minValue: 0
+      maxValue: 0
+      scaleType: NONE
+    - parameterName: batches_per_step
+      type: INTEGER
+      minValue: 0
+      maxValue: 0
+      scaleType: NONE
 EOF
 
 start_training

@@ -24,18 +24,13 @@ cd $DIR
 ENVIRONMENT=$1
 AGENT=$2
 NUM_ACTORS=$3
-shift 3
-
-ENV_BATCH_SIZE=1
+ENV_BATCH_SIZE=$4
+shift 4
 
 export PYTHONPATH=$PYTHONPATH:/
 
 ACTOR_BINARY="CUDA_VISIBLE_DEVICES='' python3 ../${ENVIRONMENT}/${AGENT}_main.py --run_mode=actor";
 LEARNER_BINARY="python3 ../${ENVIRONMENT}/${AGENT}_main.py --run_mode=learner";
-if [[ "ppo" == "${AGENT}" ]]; then
-  LEARNER_BINARY="${LEARNER_BINARY} --gin_config=/seed_rl/${ENVIRONMENT}/gin/ppo.gin";
-  ENV_BATCH_SIZE=12
-fi
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 NUM_ENVS=$(($NUM_ACTORS*$ENV_BATCH_SIZE))
 
@@ -67,5 +62,8 @@ for ((id=0; id<$NUM_ACTORS; id++)); do
     COMMAND=''"${ACTOR_BINARY}"' --logtostderr --pdb_post_mortem '"$@"' --num_envs='"${NUM_ENVS}"' --task='"${id}"' --env_batch_size='"${ENV_BATCH_SIZE}"''
     tmux send-keys -t "actor_${id}" "$COMMAND" ENTER
 done
+
+tmux new-window -d -n tensorboard
+tmux send-keys -t "tensorboard" "tensorboard --logdir /tmp/agent/ --bind_all" ENTER
 
 tmux attach -t seed_rl

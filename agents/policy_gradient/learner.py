@@ -299,7 +299,8 @@ class Learner(object):
     self.batched_action_specs = add_batch_size(self.action_specs,
                                                config.inference_batch_size)
 
-    # Only the master uses the evaluator (that's why there is no copy per host)
+    # Only the primary learner uses the evaluator
+    # (that's why there is no copy per host)
     self.evaluator = eval_utils.Evaluator(config.print_episode_summaries,
                                           config.log_episode_frequency)
 

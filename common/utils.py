@@ -53,8 +53,8 @@ MultiHostSettings = collections.namedtuple(
 def init_learner_multi_host(num_training_tpus: int):
   """Performs common learner initialization including multi-host setting.
 
-  In multi-host setting, this function will enter a loop for slave learners
-  until the master signals end of training.
+  In multi-host setting, this function will enter a loop for secondary learners
+  until the primary learner signals end of training.
 
   Args:
     num_training_tpus: Number of training TPUs.

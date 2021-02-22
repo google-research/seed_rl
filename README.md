@@ -84,8 +84,8 @@ cd seed_rl
 
 To easily start with SEED we provide a way of running it on a local
 machine. You just need to run one of the following commands (adjusting
-`number of actors` and `number of envs. per actor`
-Env. batch size` to your machine):
+`number of actors` and `number of envs. per actor/env. batch size`
+to your machine):
 
 ```shell
 ./run_local.sh [Game] [Agent] [number of actors] [number of envs. per actor]

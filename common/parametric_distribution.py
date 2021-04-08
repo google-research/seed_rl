@@ -232,7 +232,7 @@ def normal_clipped_distribution(num_actions,
     scale = gaussian_std_fn(scale)
     normal_dist = tfd.Normal(loc=loc, scale=scale)
     return tfd.Independent(
-        ClippedIdentity(normal_dist), reinterpreted_batch_ndims=1)
+        ClippedIdentity()(normal_dist), reinterpreted_batch_ndims=1)
 
   return ParametricDistribution(2 * num_actions, create_dist)
 

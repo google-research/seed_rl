@@ -83,6 +83,14 @@ class ParametricDistributionTest(tf.test.TestCase):
 
     self.assertAllClose(log_probs, continuous_log_probs + discrete_log_probs)
 
+  def test_clipped_distribution(self):
+    clipped_distribution = parametric_distribution.get_parametric_distribution_for_action_space(
+        self.create_box_space(),
+        continuous_config=parametric_distribution.continuous_action_config(
+            action_postprocessor='ClippedIdentity'))
+
+    clipped_distribution(np.zeros((6,), np.float32)).sample()
+
 
 if __name__ == '__main__':
   tf.test.main()

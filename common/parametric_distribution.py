@@ -222,6 +222,8 @@ class ClippedIdentity(tfb.identity.Identity):
   def _forward(self, x):
     return tf.clip_by_value(x, -1., 1.)
 
+CLIPPED_IDENTITY = ClippedIdentity()
+
 
 def normal_clipped_distribution(num_actions,
                                 gaussian_std_fn=softplus_default_std_fn):
@@ -232,7 +234,7 @@ def normal_clipped_distribution(num_actions,
     scale = gaussian_std_fn(scale)
     normal_dist = tfd.Normal(loc=loc, scale=scale)
     return tfd.Independent(
-        ClippedIdentity()(normal_dist), reinterpreted_batch_ndims=1)
+        CLIPPED_IDENTITY(normal_dist), reinterpreted_batch_ndims=1)
 
   return ParametricDistribution(2 * num_actions, create_dist)
 

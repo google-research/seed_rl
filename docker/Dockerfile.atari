@@ -11,7 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM tensorflow/tensorflow:2.3.0-gpu
+FROM tensorflow/tensorflow:2.4.0-gpu
 
 RUN apt-get update && apt-get install -y tmux ffmpeg libsm6 libxext6 libxrender-dev
 
@@ -19,6 +19,13 @@ RUN apt-get update && apt-get install -y tmux ffmpeg libsm6 libxext6 libxrender-
 RUN pip3 install gym[atari]
 RUN pip3 install atari-py
 RUN pip3 install tensorflow_probability==0.11.0
+
+RUN apt-get install wget unrar
+RUN wget http://www.atarimania.com/roms/Roms.rar
+RUN unrar x Roms.rar
+RUN apt-get install unzip
+RUN unzip ROMS.zip
+RUN python3 -m atari_py.import_roms ROMS
 
 # Copy SEED codebase and SEED GRPC binaries.
 ADD . /seed_rl/

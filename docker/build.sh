@@ -21,4 +21,4 @@ if [[ "mujoco" == "${CONFIG}" ]]; then
   cp ~/.mujoco/mjkey.txt mjkey.txt
 fi
 
-docker build -t seed_rl:${CONFIG} -f docker/Dockerfile.${CONFIG} .
+docker build --network=host --build-arg HTTP_PROXY=http://127.0.0.1:8889 --build-arg ALL_PROXY=http://127.0.0.1:8889 -t seed_rl:${CONFIG} -f docker/Dockerfile.${CONFIG} .

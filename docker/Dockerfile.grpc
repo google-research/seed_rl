@@ -10,9 +10,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-FROM tensorflow/tensorflow:2.3.0-custom-op-gpu-ubuntu16 as grpc_compile
-RUN git clone https://github.com/tensorflow/custom-op.git
+FROM tensorflow/tensorflow:2.4.0-custom-op-gpu-ubuntu16 as grpc_compile
+RUN HTTP_PROXY=http://127.0.0.1:8889; HTTPS_PROXY=https://127.0.0.1:8889; ALL_PROXY=http://127.0.0.1:8889; git config --global http.proxy http://127.0.0.1:8889; git clone https://github.com/tensorflow/custom-op.git
 WORKDIR custom-op
 
 RUN ./configure.sh
@@ -42,11 +41,18 @@ load("@com_github_grpc_grpc//bazel:grpc_extra_deps.bzl", "grpc_extra_deps")\n\
 grpc_extra_deps()' >> WORKSPACE
 
 ADD grpc/ grpc/
+ENV http_proxy http://127.0.0.1:8889
+ENV https_proxy https://127.0.0.1:8889
+ENV all_proxy http://127.0.0.1:8889
+RUN git config --global http.proxy http://127.0.0.1:8889; wget https://github.com/grpc/grpc/archive/ac1c5de1b36da4a1e3d72ca40b0e43f24266121a.tar.gz
 RUN bazel build grpc:ops/grpc.so grpc:service_py_proto --incompatible_remove_legacy_whole_archive=0
 
 ADD . /seed_rl
 RUN cp bazel-bin/grpc/ops/grpc.so /seed_rl/grpc/grpc_cc.so
 RUN cp bazel-bin/grpc/service_pb2.py /seed_rl/grpc/service_pb2.py
 WORKDIR /seed_rl/
-RUN pip3 install tensorflow-gpu==2.3.0
+ENV http_proxy ""
+ENV https_proxy ""
+ENV all_proxy ""
+RUN wget https://pypi.doubanio.com/packages/f0/6d/67169e8d8146f377bbfd71d6c108a0fce218411371ce41d440a7a5f5fb20/tensorflow_gpu-2.4.1-cp36-cp36m-manylinux2010_x86_64.whl; pip install tensorflow_gpu-2.4.1-cp36-cp36m-manylinux2010_x86_64.whl
 RUN PYTHONPATH=/ python3 grpc/python/ops_test.py

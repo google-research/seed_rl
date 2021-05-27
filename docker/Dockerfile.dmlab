@@ -55,6 +55,7 @@ RUN NP_INC="$(python3 -c 'import numpy as np; print(np.get_include()[5:])')" && 
     sed -i 's@python3.5@python3.6@g' python.BUILD && \
     sed -i 's@glob(\[@glob(["'"$NP_INC"'/\*\*/*.h", @g' python.BUILD && \
     sed -i 's@: \[@: ["'"$NP_INC"'", @g' python.BUILD && \
+    sed -i 's@650250979303a649e21f87b5ccd02672af1ea6954b911342ea491f351ceb7122@1e9793e1c6ba66e7e0b6e5fe7fd0f9e935cc697854d5737adec54d93e5b3f730@g' WORKSPACE && \
     bazel build -c opt python/pip_package:build_pip_package --incompatible_remove_legacy_whole_archive=0 && \
     pip3 install wheel && \
     PYTHON_BIN_PATH="/usr/bin/python3" ./bazel-bin/python/pip_package/build_pip_package /tmp/dmlab_pkg && \

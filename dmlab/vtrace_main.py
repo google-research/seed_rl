@@ -35,11 +35,7 @@ FLAGS = flags.FLAGS
 
 # Optimizer settings.
 flags.DEFINE_float('learning_rate', 0.00031866995608948655, 'Learning rate.')
-# flags.DEFINE_float('adam_epsilon', 3.125e-7, 'Adam epsilon.')
-flags.DEFINE_float('rms_epsilon', .1, 'RMS epsilon.')
-flags.DEFINE_float('rms_momentum', 0., 'RMS momentum.')
-flags.DEFINE_float('rms_decay', .99, 'RMS decay.')
-flags.DEFINE_string('sub_task', 'all', 'sub tasks, i.e. dmlab30, all, others')
+flags.DEFINE_float('adam_epsilon', 3.125e-7, 'Adam epsilon.')
 
 
 def create_agent(action_space, unused_env_observation_space,
@@ -50,10 +46,8 @@ def create_agent(action_space, unused_env_observation_space,
 def create_optimizer(final_iteration):
   learning_rate_fn = tf.keras.optimizers.schedules.PolynomialDecay(
       FLAGS.learning_rate, final_iteration, 0)
-  # optimizer = tf.keras.optimizers.Adam(learning_rate_fn, beta_1=0,
-  #                                      epsilon=FLAGS.adam_epsilon)
-  optimizer = tf.keras.optimizers.RMSprop(learning_rate_fn, FLAGS.rms_decay, FLAGS.rms_momentum,
-                                       FLAGS.rms_epsilon)
+  optimizer = tf.keras.optimizers.Adam(learning_rate_fn, beta_1=0,
+                                       epsilon=FLAGS.adam_epsilon)
   return optimizer, learning_rate_fn
 
 

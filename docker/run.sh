@@ -55,10 +55,8 @@ tmux send-keys KPEnter
 tmux send-keys "stop_seed"
 tmux new-window -d -n learner
 mkdir "/outdata/logs/seed_rl/${ENVIRONMENT}_${AGENT}"
-chmod 777 "/outdata/logs/seed_rl/${ENVIRONMENT}_${AGENT}"
 mkdir "${LOG_DIR}"
 COMMAND='rm '"${LOG_DIR}"' -Rf; '"${LEARNER_BINARY}"' --logtostderr --logdir '"${LOG_DIR}"' --pdb_post_mortem --num_envs='"${NUM_ENVS}"' --env_batch_size='"${ENV_BATCH_SIZE}"''
-chmod 777 "${LOG_DIR}"
 echo $COMMAND
 tmux send-keys -t "learner" "$COMMAND" ENTER
 

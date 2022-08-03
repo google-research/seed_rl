@@ -33,7 +33,7 @@ import tensorflow as tf
 FLAGS = flags.FLAGS
 
 # Optimizer settings.
-flags.DEFINE_float('learning_rate', 1e-4, 'Learning rate.')
+flags.DEFINE_float('learning_rate', 1e-3, 'Learning rate.')
 flags.DEFINE_float('adam_epsilon', 1e-3, 'Adam epsilon.')
 flags.DEFINE_string('sub_task', 'all', 'sub tasks')
 
@@ -50,7 +50,6 @@ def create_optimizer(final_iteration):
   optimizer = tf.keras.optimizers.Adam(FLAGS.learning_rate,
                                        epsilon=FLAGS.adam_epsilon)
   return optimizer, learning_rate_fn
-
 
 def main(argv):
   if len(argv) > 1:

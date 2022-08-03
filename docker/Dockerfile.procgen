@@ -13,8 +13,6 @@
 
 FROM seed_rl:procgen_0
 
-ADD . /seed_rl/
-
 # RUN pip3 install Pillow
 # RUN pip3 install procgen
 # RUN pip3 install tensorflow_probability==0.11.0

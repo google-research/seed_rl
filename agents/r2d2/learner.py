@@ -42,7 +42,7 @@ import tensorflow as tf
 
 flags.DEFINE_integer('save_checkpoint_secs', 1800,
                      'Checkpoint save period in seconds.')
-flags.DEFINE_integer('total_environment_frames', int(1e9),
+flags.DEFINE_integer('total_environment_frames', int(2e8),
                      'Total environment frames to train for.')
 flags.DEFINE_integer('batch_size', 64, 'Batch size for training.')
 flags.DEFINE_float('replay_ratio', 1.5,
@@ -55,10 +55,10 @@ flags.DEFINE_integer('inference_batch_size', -1,
 flags.DEFINE_integer('unroll_length', 100, 'Unroll length in agent steps.')
 flags.DEFINE_integer('num_training_tpus', 1, 'Number of TPUs for training.')
 flags.DEFINE_integer('update_target_every_n_step',
-                     2500,
+                     400,
                      'Update the target network at this frequency (expressed '
                      'in number of training steps)')
-flags.DEFINE_integer('replay_buffer_size', 100,
+flags.DEFINE_integer('replay_buffer_size', int(1e4),
                      'Size of the replay buffer (in number of unrolls stored).')
 flags.DEFINE_integer('replay_buffer_min_size', 10,
                      'Learning only starts when there is at least this number '
@@ -868,6 +868,12 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
         summary_writer.set_as_default()
         tf.summary.experimental.set_step(num_env_frames)
         episode_info = info_queue.dequeue_many(info_queue.size())
+        training_ep_frames = 0
+        training_ep_return = 0
+        eval_ep_frames = 0
+        eval_ep_return = 0
+        training_num = 0
+        eval_num = 0
         for n, r, _, env_id in zip(*episode_info):
           is_training = is_training_env(env_id)
           logging.info(
@@ -875,12 +881,18 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
               r, n, env_id,
               'training' if is_training else 'eval',
               iterations.numpy())
-          if not is_training:
-            tf.summary.scalar('eval/episode_return', r)
-            tf.summary.scalar('eval/episode_frames', n)
+          if is_training:
+            training_ep_frames += n
+            training_ep_return += r
+            training_num += 1
           else:
-            tf.summary.scalar('train/episode_return', r)
-            tf.summary.scalar('train/episode_frames', n)
+            eval_ep_frames += n
+            eval_ep_return += r
+            eval_num += 1
+        tf.summary.scalar('eval/avg_episode_return', 0 if eval_num == 0 else eval_ep_return / eval_num)
+        tf.summary.scalar('eval/avg_episode_frames', 0 if eval_num == 0 else eval_ep_frames / eval_num)
+        tf.summary.scalar('train/avg_episode_return', 0 if training_num == 0 else training_ep_return / training_num)
+        tf.summary.scalar('train/avg_episode_frames', 0 if training_num == 0 else training_ep_frames / training_num)
       log_future.result()  # Raise exception if any occurred in logging.
       log_future = executor.submit(log, num_env_frames)
 
@@ -890,7 +902,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
       # Max of gradient norms (before clipping) since last tf.summary export.
       max_gradient_norm_before_clip = max(gradient_norm.numpy(),
                                           max_gradient_norm_before_clip)
-      if current_time - last_log_time >= 120:
+      if current_time - last_log_time >= 30:
         df = tf.cast(num_env_frames - last_num_env_frames, tf.float32)
         dt = time.time() - last_log_time
         tf.summary.scalar('num_environment_frames/sec (actors)', df / dt)

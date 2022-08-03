@@ -69,6 +69,13 @@ flags.DEFINE_integer('log_episode_frequency', 1, 'We average that many episodes'
 
 FLAGS = flags.FLAGS
 
+EpisodeInfo = collections.namedtuple(
+    'EpisodeInfo',
+    # num_frames: length of the episode in number of frames.
+    # returns: Sum of undiscounted rewards experienced in the episode.
+    # raw_returns: Sum of raw rewards experienced in the episode.
+    # env_ids: ID of the environment that generated this episode.
+    'num_frames returns raw_returns env_ids')
 
 def compute_loss(logger, parametric_action_distribution, agent, agent_state,
                  prev_actions, env_outputs, agent_outputs):
@@ -289,7 +296,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     tf.print('Loading initial checkpoint from %s...' % FLAGS.init_checkpoint)
     ckpt.restore(FLAGS.init_checkpoint).assert_consumed()
   manager = tf.train.CheckpointManager(
-      ckpt, FLAGS.logdir, max_to_keep=1, keep_checkpoint_every_n_hours=6)
+      ckpt, FLAGS.logdir, max_to_keep=20, keep_checkpoint_every_n_hours=6)
   last_ckpt_time = 0  # Force checkpointing of the initial model.
   if manager.latest_checkpoint:
     logging.info('Restoring checkpoint: %s', manager.latest_checkpoint)
@@ -309,8 +316,9 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
       tf.TensorSpec([], tf.float32, 'episode_returns'),
       tf.TensorSpec([], tf.float32, 'episode_raw_returns'),
   )
-
-  info_queue = utils.StructuredFIFOQueue(-1, info_specs)
+  episode_info_specs = EpisodeInfo(*(
+      info_specs + (tf.TensorSpec([], tf.int32, 'env_ids'),)))
+  info_queue = utils.StructuredFIFOQueue(-1, episode_info_specs)
 
   def create_host(i, host, inference_devices):
     with tf.device(host):
@@ -374,7 +382,8 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
           env_infos.add(env_ids, (0, env_outputs.reward, raw_rewards))
           done_ids = tf.gather(env_ids, tf.where(env_outputs.done)[:, 0])
           if i == 0:
-            info_queue.enqueue_many(env_infos.read(done_ids))
+            done_episodes_info = env_infos.read(done_ids)
+            info_queue.enqueue_many(EpisodeInfo(*(done_episodes_info + (done_ids,))))
           env_infos.reset(done_ids)
           env_infos.add(env_ids, (FLAGS.num_action_repeats, 0., 0.))
 
@@ -451,17 +460,20 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     n_episodes -= n_episodes % FLAGS.log_episode_frequency
     if tf.not_equal(n_episodes, 0):
       episode_stats = info_queue.dequeue_many(n_episodes)
-      episode_keys = [
-          'episode_num_frames', 'episode_return', 'episode_raw_return'
-      ]
-      for key, values in zip(episode_keys, episode_stats):
-        for value in tf.split(values,
-                              values.shape[0] // FLAGS.log_episode_frequency):
-          tf.summary.scalar(key, tf.reduce_mean(value))
+      # episode_keys = [
+      #     'episode_num_frames', 'episode_return', 'episode_raw_return'
+      # ]
+      # for key, values in zip(episode_keys, episode_stats):
+      #   for value in tf.split(values,
+      #                         values.shape[0] // FLAGS.log_episode_frequency):
+      #     tf.summary.scalar(key, tf.reduce_mean(value))
 
-      for (frames, ep_return, raw_return) in zip(*episode_stats):
-        logging.info('Return: %f Raw return: %f Frames: %i', ep_return,
-                     raw_return, frames)
+      for (frames, ep_return, raw_return, env_id) in zip(*episode_stats):
+        logging.info('Return: %f Raw return: %f Frames: %i Env id: %i', ep_return,
+                     raw_return, frames, env_id)
+        tf.summary.scalar(FLAGS.task_names[env_id % len(FLAGS.task_names)] + '/episode_num_frames', frames)
+        tf.summary.scalar(FLAGS.task_names[env_id % len(FLAGS.task_names)] + '/episode_return', ep_return)
+        tf.summary.scalar(FLAGS.task_names[env_id % len(FLAGS.task_names)] + '/episode_raw_return', raw_return)
 
   logger.start(additional_logs)
   # Execute learning.

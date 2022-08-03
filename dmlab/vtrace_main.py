@@ -28,8 +28,7 @@ from seed_rl.common import common_flags
 from seed_rl.dmlab import env
 from seed_rl.dmlab import networks
 import tensorflow as tf
-
-
+from seed_rl.dmlab import games
 
 FLAGS = flags.FLAGS
 
@@ -58,6 +57,12 @@ def create_optimizer(final_iteration):
 
 
 def main(argv):
+  if FLAGS.sub_task == 'dmlab30':
+    FLAGS.task_names = games.DMLAB_30
+  elif FLAGS.sub_task == 'others':
+    FLAGS.task_names = games.OTHERS
+  else:
+    FLAGS.task_names = [FLAGS.sub_task]
   if len(argv) > 1:
     raise app.UsageError('Too many command-line arguments.')
   if FLAGS.run_mode == 'actor':

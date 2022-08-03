@@ -1,3 +1,20 @@
+# Updates
+- Add support for procgen and dmlab multi-task training
+- Add monitors for subtask ep return in multi-task training
+
+# Todo
+- Add support for string sharing between actors and learners
+
+# New Commands
+```shell
+./run_local.sh [Game] [Agent] [actors] [envs per actor] [task] [port for tensorboard] [cuda device] [run id]
+./run_local.sh procgen r2d2 100 4 bigfish 7000 7 0
+./run_local.sh procgen r2d2 100 4 bossfight 7001 6 0
+./run_local.sh dmlab vtrace 100 4 rooms_watermaze 7001 6 0
+./run_local.sh dmlab vtrace 100 4 lasertag_three_opponents_small 7000 6 0
+./run_local.sh dmlab vtrace 100 4 seekavoid_arena_01 7000 6 0
+```
+
 # SEED
 
 This repository contains an implementation of distributed reinforcement learning

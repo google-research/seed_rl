@@ -156,6 +156,54 @@ ALL_GAMES = frozenset([
     'explore_object_rewards_many',
 ])
 
+DMLAB_30 = [
+    'rooms_collect_good_objects_train',
+    'rooms_exploit_deferred_effects_train',
+    'rooms_select_nonmatching_object',
+    'rooms_watermaze',
+    'rooms_keys_doors_puzzle',
+    'language_select_described_object',
+    'language_select_located_object',
+    'language_execute_random_task',
+    'language_answer_quantitative_question',
+    'lasertag_one_opponent_small',
+    'lasertag_three_opponents_small',
+    'lasertag_one_opponent_large',
+    'lasertag_three_opponents_large',
+    'natlab_fixed_large_map',
+    'natlab_varying_map_regrowth',
+    'natlab_varying_map_randomized',
+    'skymaze_irreversible_path_hard',
+    'skymaze_irreversible_path_varied',
+    'psychlab_arbitrary_visuomotor_mapping',
+    'psychlab_continuous_recognition',
+    'psychlab_sequential_comparison',
+    'psychlab_visual_search',
+    'explore_object_locations_small',
+    'explore_object_locations_large',
+    'explore_obstructed_goals_small',
+    'explore_obstructed_goals_large',
+    'explore_goal_locations_small',
+    'explore_goal_locations_large',
+    'explore_object_rewards_few',
+    'explore_object_rewards_many',
+]
+
+OTHERS = [
+    'lt_chasm',
+    'lt_hallway_slope',
+    'lt_horseshoe_color',
+    'lt_space_bounce_hard',
+    'nav_maze_random_goal_01',
+    'nav_maze_random_goal_02',
+    'nav_maze_random_goal_03',
+    'nav_maze_static_01',
+    'nav_maze_static_02',
+    'nav_maze_static_03',
+    'seekavoid_arena_01',
+    'stairway_to_melon',
+]
+
 
 def human_normalized_score(game, returns):
   """Computes human normalized score.

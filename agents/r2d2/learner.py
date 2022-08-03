@@ -501,6 +501,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   settings = utils.init_learner(FLAGS.num_training_tpus)
   strategy, inference_devices, training_strategy, encode, decode = settings
   env = create_env_fn(0, FLAGS)
+  FLAGS.num_action_repeats = 1
   env_output_specs = utils.EnvOutput(
       tf.TensorSpec([], tf.float32, 'reward'),
       tf.TensorSpec([], tf.bool, 'done'),
@@ -646,7 +647,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   ckpt = tf.train.Checkpoint(
       agent=agent, target_agent=target_agent, optimizer=optimizer)
   manager = tf.train.CheckpointManager(
-      ckpt, FLAGS.logdir, max_to_keep=1, keep_checkpoint_every_n_hours=6)
+      ckpt, FLAGS.logdir, max_to_keep=20, keep_checkpoint_every_n_hours=6)
   last_ckpt_time = 0  # Force checkpointing of the initial model.
   if manager.latest_checkpoint:
     logging.info('Restoring checkpoint: %s', manager.latest_checkpoint)
@@ -877,6 +878,9 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
           if not is_training:
             tf.summary.scalar('eval/episode_return', r)
             tf.summary.scalar('eval/episode_frames', n)
+          else:
+            tf.summary.scalar('train/episode_return', r)
+            tf.summary.scalar('train/episode_frames', n)
       log_future.result()  # Raise exception if any occurred in logging.
       log_future = executor.submit(log, num_env_frames)
 

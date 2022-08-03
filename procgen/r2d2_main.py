@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-"""V-trace (IMPALA) binary for DeepMind Lab.
+"""R2D2 binary for ATARI-57.
 
 Actor and learner are in the same binary so that all flags are shared.
 """
@@ -21,12 +21,11 @@ Actor and learner are in the same binary so that all flags are shared.
 
 from absl import app
 from absl import flags
-
-from seed_rl.agents.vtrace import learner
+from seed_rl.agents.r2d2 import learner
+from seed_rl.procgen import env
+from seed_rl.procgen import networks
 from seed_rl.common import actor
 from seed_rl.common import common_flags  
-from seed_rl.dmlab import env
-from seed_rl.dmlab import networks
 import tensorflow as tf
 
 
@@ -34,26 +33,22 @@ import tensorflow as tf
 FLAGS = flags.FLAGS
 
 # Optimizer settings.
-flags.DEFINE_float('learning_rate', 0.00031866995608948655, 'Learning rate.')
-# flags.DEFINE_float('adam_epsilon', 3.125e-7, 'Adam epsilon.')
-flags.DEFINE_float('rms_epsilon', .1, 'RMS epsilon.')
-flags.DEFINE_float('rms_momentum', 0., 'RMS momentum.')
-flags.DEFINE_float('rms_decay', .99, 'RMS decay.')
-flags.DEFINE_string('sub_task', 'all', 'sub tasks, i.e. dmlab30, all, others')
+flags.DEFINE_float('learning_rate', 1e-4, 'Learning rate.')
+flags.DEFINE_float('adam_epsilon', 1e-3, 'Adam epsilon.')
+flags.DEFINE_string('sub_task', 'all', 'sub tasks')
 
 
-def create_agent(action_space, unused_env_observation_space,
-                 unused_parametric_action_distribution):
-  return networks.ImpalaDeep(action_space.n)
+def create_agent(env_output_specs, num_actions):
+  return networks.DuelingLSTMDQNNet(
+      num_actions, env_output_specs.observation.shape)
 
 
 def create_optimizer(final_iteration):
-  learning_rate_fn = tf.keras.optimizers.schedules.PolynomialDecay(
-      FLAGS.learning_rate, final_iteration, 0)
-  # optimizer = tf.keras.optimizers.Adam(learning_rate_fn, beta_1=0,
-  #                                      epsilon=FLAGS.adam_epsilon)
-  optimizer = tf.keras.optimizers.RMSprop(learning_rate_fn, FLAGS.rms_decay, FLAGS.rms_momentum,
-                                       FLAGS.rms_epsilon)
+  learning_rate_fn = lambda iteration: FLAGS.learning_rate
+  # learning_rate_fn = tf.keras.optimizers.schedules.PolynomialDecay(
+  #   FLAGS.learning_rate, final_iteration, 0)
+  optimizer = tf.keras.optimizers.Adam(FLAGS.learning_rate,
+                                       epsilon=FLAGS.adam_epsilon)
   return optimizer, learning_rate_fn
 
 

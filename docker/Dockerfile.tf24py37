@@ -1,0 +1,100 @@
+# Copyright 2019 The SEED Authors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+FROM tensorflow/tensorflow:2.4.1-gpu
+
+
+
+ADD ./docker/prepare /prepare/
+WORKDIR /prepare/
+
+RUN echo "Update apt source (aliyun)" && mv /etc/apt/sources.list /etc/apt/sources.list.old && cp sources.list /etc/apt/sources.list
+RUN echo "Update Nvidia Key"
+# ref: https://forums.developer.nvidia.com/t/notice-cuda-linux-repository-key-rotation/212772
+# apt-get update
+# apt-get install -y wget
+RUN apt-key del 7fa2af80
+# apt-key del F60F4B3D7FA2AF80
+RUN rm /etc/apt/sources.list.d/cuda.list
+RUN rm /etc/apt/sources.list.d/nvidia-ml.list
+# ref: https://github.com/NVIDIA/nvidia-docker/issues/1631
+# wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-keyring_1.0-1_all.deb 
+RUN dpkg -i cuda-keyring_1.0-1_all.deb
+# wget -qO - https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/7fa2af80.pub | apt-key add -
+# gpg --keyserver keyserver.ubuntu.com --recv A4B469963BF863CC
+# gpg --export --armor A4B469963BF863CC | apt-key add -
+# Start
+RUN echo "Install dependencies"
+RUN apt-get update --fix-missing
+RUN apt-get install -y \
+    curl \
+    zip \
+    unzip \
+    software-properties-common \
+    pkg-config \
+    g++-4.8 \
+    zlib1g-dev \
+    lua5.1 \
+    liblua5.1-0-dev \
+    libffi-dev \
+    gettext \
+    freeglut3 \
+    libsdl2-dev \
+    libosmesa6-dev \
+    libglu1-mesa \
+    libglu1-mesa-dev \
+    python3-dev \
+    build-essential \
+    git \
+    python-setuptools \
+    python3-pip \
+    libjpeg-dev \
+    tmux vim wget htop
+
+
+# Set temp work directory
+# for package configuration
+RUN apt remove python3 -y
+RUN apt remove python3-pip -y
+RUN apt autoremove -y
+WORKDIR /usr/src/cache
+RUN rm -rf /usr/local/bin/python3 && rm -rf /usr/bin/python3 && rm -rf /usr/lib/python3
+# Update apt packages
+RUN apt update
+# RUN apt upgrade -y
+# Install python 3.7
+RUN apt install software-properties-common -y
+# RUN add-apt-repository ppa:deadsnakes/ppa
+RUN apt install python3.7 -y
+# Add 3.7 to the available alternatives
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.7 1
+
+# Set python3.7 as the default python
+RUN update-alternatives --set python3 /usr/bin/python3.7
+
+# Make python 3.7 the default
+RUN echo "alias python=python3.7" >> ~/.bashrc
+RUN export PATH=${PATH}:/usr/bin/python3.7
+RUN /bin/bash -c "source ~/.bashrc"
+# Install pip
+RUN apt install python3-pip -y
+
+RUN python3 -V
+RUN python3 -m pip --version
+RUN python3 -m pip install --upgrade pip -i https://mirrors.aliyun.com/pypi/simple
+# RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+# RUN python3 get-pip.py --force-reinstall
+RUN pip3 config set global.index-url https://mirrors.aliyun.com/pypi/simple
+RUN pip3 -V
+
+RUN pip3 install tensorflow-gpu==2.4.1

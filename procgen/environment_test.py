@@ -1,3 +1,4 @@
+# coding=utf-8
 # Copyright 2019 The SEED Authors
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,18 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM seed_rl:tf24py37
+"""Environment test."""
 
-RUN apt-get update && apt-get install -y tmux ffmpeg libsm6 libxext6 libxrender-dev wget unrar unzip
+import os
 
-# Install Atari environment
-RUN pip3 install gym
-RUN pip3 install ale-py
-RUN pip3 install autorom[accept-rom-license]
-RUN pip3 install tensorflow_probability==0.11.0
+from absl import flags
+from seed_rl.procgen import env
+import tensorflow as tf
+
+FLAGS = flags.FLAGS
 
 
-# Copy SEED codebase and SEED GRPC binaries.
-ADD . /seed_rl/
-WORKDIR /seed_rl
-ENTRYPOINT ["python3", "gcp/run.py"]
+class EnvironmentTest(tf.test.TestCase):
+
+  def test_run_step(self):
+    environment = env.create_environment(0, FLAGS)
+    environment.reset()
+    environment.step(0)
+    environment.close()
+
+
+if __name__ == '__main__':
+  tf.test.main()

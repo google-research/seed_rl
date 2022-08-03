@@ -48,7 +48,7 @@ flags.DEFINE_string('init_checkpoint', None,
                     'Path to the checkpoint used to initialize the agent.')
 
 # Loss settings.
-flags.DEFINE_float('entropy_cost', 0.00025, 'Entropy cost/multiplier.')
+flags.DEFINE_float('entropy_cost', 0.0033391318945337044, 'Entropy cost/multiplier.')
 flags.DEFINE_float('target_entropy', None, 'If not None, the entropy cost is '
                    'automatically adjusted to reach the desired entropy level.')
 flags.DEFINE_float('entropy_cost_adjustment_speed', 10., 'Controls how fast '
@@ -190,6 +190,8 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   settings = utils.init_learner_multi_host(FLAGS.num_training_tpus)
   strategy, hosts, training_strategy, encode, decode = settings
   env = create_env_fn(0, FLAGS)
+  FLAGS.num_action_repeats = env._num_action_repeats
+  logging.info('Action repeats: %d', env._num_action_repeats)
   parametric_action_distribution = get_parametric_distribution_for_action_space(
       env.action_space)
   env_output_specs = utils.EnvOutput(
@@ -288,7 +290,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     tf.print('Loading initial checkpoint from %s...' % FLAGS.init_checkpoint)
     ckpt.restore(FLAGS.init_checkpoint).assert_consumed()
   manager = tf.train.CheckpointManager(
-      ckpt, FLAGS.logdir, max_to_keep=1, keep_checkpoint_every_n_hours=6)
+      ckpt, FLAGS.logdir, max_to_keep=20, keep_checkpoint_every_n_hours=6)
   last_ckpt_time = 0  # Force checkpointing of the initial model.
   if manager.latest_checkpoint:
     logging.info('Restoring checkpoint: %s', manager.latest_checkpoint)

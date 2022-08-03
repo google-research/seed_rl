@@ -13,16 +13,14 @@
 
 FROM seed_rl:tf24py37
 
-RUN apt-get update && apt-get install -y tmux ffmpeg libsm6 libxext6 libxrender-dev wget unrar unzip
+# ADD . /seed_rl/
 
-# Install Atari environment
-RUN pip3 install gym
-RUN pip3 install ale-py
-RUN pip3 install autorom[accept-rom-license]
+RUN pip3 install Pillow
+RUN pip3 install procgen
 RUN pip3 install tensorflow_probability==0.11.0
 
 
-# Copy SEED codebase and SEED GRPC binaries.
-ADD . /seed_rl/
-WORKDIR /seed_rl
-ENTRYPOINT ["python3", "gcp/run.py"]
+# # Copy SEED codebase and SEED GRPC binaries.
+# COPY . /seed_rl/
+# WORKDIR /seed_rl
+# ENTRYPOINT ["python3", "gcp/run.py"]

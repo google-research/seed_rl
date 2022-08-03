@@ -39,7 +39,7 @@ flags.DEFINE_float('rms_epsilon', .1, 'RMS epsilon.')
 flags.DEFINE_float('rms_momentum', 0., 'RMS momentum.')
 flags.DEFINE_float('rms_decay', .99, 'RMS decay.')
 flags.DEFINE_string('sub_task', 'all', 'sub tasks, i.e. dmlab30, all, others')
-
+flags.DEFINE_list('task_names', [], 'names of tasks')
 
 def create_agent(action_space, unused_env_observation_space,
                  unused_parametric_action_distribution):

@@ -38,7 +38,7 @@ flags.DEFINE_float('learning_rate', 0.00031866995608948655, 'Learning rate.')
 flags.DEFINE_float('rms_epsilon', .1, 'RMS epsilon.')
 flags.DEFINE_float('rms_momentum', 0., 'RMS momentum.')
 flags.DEFINE_float('rms_decay', .99, 'RMS decay.')
-flags.DEFINE_string('sub_task', 'all', 'sub tasks, i.e. dmlab30, all, others')
+flags.DEFINE_string('sub_task', 'all', 'sub tasks, i.e. dmlab30, dmlab26, all, others')
 flags.DEFINE_list('task_names', [], 'names of tasks')
 
 def create_agent(action_space, unused_env_observation_space,
@@ -61,6 +61,8 @@ def main(argv):
     FLAGS.task_names = games.DMLAB_30
   elif FLAGS.sub_task == 'others':
     FLAGS.task_names = games.OTHERS
+  elif FLAGS.sub_task == 'dmlab26':
+    FLAGS.task_names = games.DMLAB_26
   else:
     FLAGS.task_names = [FLAGS.sub_task]
   if len(argv) > 1:

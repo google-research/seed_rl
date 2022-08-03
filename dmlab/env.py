@@ -133,6 +133,8 @@ class DmLab(gym.Env):
 def create_environment(task, config):
     if config.sub_task == 'dmlab30':
       cur_game = 'contributed/dmlab30/' + games.DMLAB_30[task % len(games.DMLAB_30)]
+    elif config.sub_task == "dmlab26":
+      cur_game = 'contributed/dmlab30/' + games.DMLAB_26[task % len(games.DMLAB_26)]
     elif config.sub_task == "others":
       cur_game = games.OTHERS[task % len(games.OTHERS)]
     elif config.sub_task in games.DMLAB_30:

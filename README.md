@@ -1,6 +1,7 @@
 # Updates
-- Add support for procgen and dmlab multi-task training
-- Add monitors for subtask ep return in multi-task training
+- Add support for procgen and dmlab multi-task training.
+- Add monitors for subtask ep return in multi-task training.
+- Move logs to `~/logs/seed_rl/${game}_${agent}/${task}/${NUM_ACTORS}_${ENV_PER_ACTOR}_${PORT}_${CUDA}_${RUN_ID}` in host, path `~/logs/seed_rl` must be created in advance.
 
 # Todo
 - Add support for string sharing between actors and learners

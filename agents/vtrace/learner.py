@@ -37,7 +37,7 @@ import tensorflow as tf
 # Training.
 flags.DEFINE_integer('save_checkpoint_secs', 1800,
                      'Checkpoint save period in seconds.')
-flags.DEFINE_integer('total_environment_frames', int(1e9),
+flags.DEFINE_integer('total_environment_frames', int(1e10),
                      'Total environment frames to train for.')
 flags.DEFINE_integer('batch_size', 32, 'Batch size for training.')
 flags.DEFINE_integer('inference_batch_size', -1,
@@ -471,9 +471,9 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
       for (frames, ep_return, raw_return, env_id) in zip(*episode_stats):
         logging.info('Return: %f Raw return: %f Frames: %i Env id: %i', ep_return,
                      raw_return, frames, env_id)
-        tf.summary.scalar(FLAGS.task_names[env_id % len(FLAGS.task_names)] + '/episode_num_frames', frames)
-        tf.summary.scalar(FLAGS.task_names[env_id % len(FLAGS.task_names)] + '/episode_return', ep_return)
-        tf.summary.scalar(FLAGS.task_names[env_id % len(FLAGS.task_names)] + '/episode_raw_return', raw_return)
+        tf.summary.scalar('subtasks/' + FLAGS.task_names[env_id % len(FLAGS.task_names)] + '/episode_num_frames', frames)
+        tf.summary.scalar('subtasks/' + FLAGS.task_names[env_id % len(FLAGS.task_names)] + '/episode_return', ep_return)
+        tf.summary.scalar('subtasks/' + FLAGS.task_names[env_id % len(FLAGS.task_names)] + '/episode_raw_return', raw_return)
 
   logger.start(additional_logs)
   # Execute learning.

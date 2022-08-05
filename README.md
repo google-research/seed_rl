@@ -14,6 +14,7 @@
 ./run_local.sh dmlab vtrace 100 4 rooms_watermaze 7001 6 0
 ./run_local.sh dmlab vtrace 100 4 lasertag_three_opponents_small 7000 6 0
 ./run_local.sh dmlab vtrace 100 4 seekavoid_arena_01 7000 6 0
+./sample_local.sh dmlab vtrace 25 4 rooms_watermaze 6000 5 0
 ```
 
 # SEED

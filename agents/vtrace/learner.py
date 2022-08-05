@@ -198,6 +198,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   strategy, hosts, training_strategy, encode, decode = settings
   env = create_env_fn(0, FLAGS)
   FLAGS.num_action_repeats = env._num_action_repeats
+  logging.info('Action repeats: %d', env._num_action_repeats)
   parametric_action_distribution = get_parametric_distribution_for_action_space(
       env.action_space)
   env_output_specs = utils.EnvOutput(
@@ -316,9 +317,10 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
       tf.TensorSpec([], tf.float32, 'episode_returns'),
       tf.TensorSpec([], tf.float32, 'episode_raw_returns'),
   )
-  episode_info_specs = EpisodeInfo(*(
-      info_specs + (tf.TensorSpec([], tf.int32, 'env_ids'),)))
-  info_queue = utils.StructuredFIFOQueue(-1, episode_info_specs)
+  # episode_info_specs = EpisodeInfo(*(
+  #     info_specs + (tf.TensorSpec([], tf.int32, 'env_ids'),)))
+  # info_queue = utils.StructuredFIFOQueue(-1, episode_info_specs)
+  info_queue = utils.StructuredFIFOQueue(-1, info_specs)
 
   def create_host(i, host, inference_devices):
     with tf.device(host):
@@ -381,9 +383,11 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
           # Update steps and return.
           env_infos.add(env_ids, (0, env_outputs.reward, raw_rewards))
           done_ids = tf.gather(env_ids, tf.where(env_outputs.done)[:, 0])
+          # if i == 0:
+          #   done_episodes_info = env_infos.read(done_ids)
+          #   info_queue.enqueue_many(EpisodeInfo(*(done_episodes_info + (done_ids,))))
           if i == 0:
-            done_episodes_info = env_infos.read(done_ids)
-            info_queue.enqueue_many(EpisodeInfo(*(done_episodes_info + (done_ids,))))
+            info_queue.enqueue_many(env_infos.read(done_ids))
           env_infos.reset(done_ids)
           env_infos.add(env_ids, (FLAGS.num_action_repeats, 0., 0.))
 

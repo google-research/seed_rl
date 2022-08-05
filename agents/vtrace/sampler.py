@@ -169,8 +169,8 @@ FLAGS = flags.FLAGS
 #     'Unroll', 'agent_state prev_actions env_outputs agent_outputs')
 
 
-def validate_config():
-  utils.validate_learner_config(FLAGS)
+# def validate_config():
+#   utils.validate_learner_config(FLAGS)
 
 
 def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
@@ -193,7 +193,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   """
   done_eps = 0
   logging.info('Starting learner loop')
-  validate_config()
+  # validate_config()
   settings = utils.init_learner_multi_host(FLAGS.num_training_tpus)
   strategy, hosts, training_strategy, encode, decode = settings
   env = create_env_fn(0, FLAGS)
@@ -251,6 +251,12 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     # iterations = optimizer.iterations
     optimizer._create_hypers()  
     optimizer._create_slots(agent.trainable_variables)  
+    ckpt = tf.train.Checkpoint(agent=agent, optimizer=optimizer)
+    if FLAGS.init_checkpoint is not None:
+      tf.print('Loading initial checkpoint from %s...' % FLAGS.init_checkpoint)
+      ckpt.restore(FLAGS.init_checkpoint).assert_consumed()
+    elif FLAGS.init_model is not None:
+      agent = tf.saved_model.load(export_dir=FLAGS.init_model)
 
     # ON_READ causes the replicated variable to act as independent variables for
     # each replica.
@@ -291,12 +297,6 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   #     lambda t: tf.TensorSpec(t.shape[1:], t.dtype), initial_agent_output)
 
   # Setup checkpointing and restore checkpoint.
-  ckpt = tf.train.Checkpoint(agent=agent, optimizer=optimizer)
-  if FLAGS.init_checkpoint is not None:
-    tf.print('Loading initial checkpoint from %s...' % FLAGS.init_checkpoint)
-    ckpt.restore(FLAGS.init_checkpoint).assert_consumed()
-  elif FLAGS.init_model is not None:
-    agent = tf.saved_model.load(export_dir=FLAGS.init_model)
   # manager = tf.train.CheckpointManager(
   #     ckpt, FLAGS.logdir, max_to_keep=50, keep_checkpoint_every_n_hours=6)
   # last_ckpt_time = 0  # Force checkpointing of the initial model.

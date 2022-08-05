@@ -36,7 +36,8 @@ ACTOR_BINARY="CUDA_VISIBLE_DEVICES='' python3 ../${ENVIRONMENT}/${AGENT}_main.py
 LEARNER_BINARY="python3 ../${ENVIRONMENT}/${AGENT}_main.py --run_mode=learner";
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 NUM_ENVS=$(($NUM_ACTORS*$ENV_BATCH_SIZE))
-
+CKPT_PATH="../dmlab_experts/${SUB_TASK}/ckpt-42"
+MODULE_PATH="../dmlab_experts/${SUB_TASK}/saved_model"
 
 tmux new-session -d -t seed_rl
 mkdir -p /tmp/seed_rl
@@ -58,7 +59,8 @@ tmux new-window -d -n learner
 mkdir "/outdata/logs/seed_rl/${ENVIRONMENT}_${AGENT}"
 mkdir "/outdata/logs/seed_rl/${ENVIRONMENT}_${AGENT}/${SUB_TASK}"
 mkdir "${LOG_DIR}"
-COMMAND='rm '"${LOG_DIR}"' -Rf; '"${LEARNER_BINARY}"' --logtostderr --logdir '"${LOG_DIR}"' --sub_task '"${SUB_TASK}"' --pdb_post_mortem --num_envs='"${NUM_ENVS}"' --env_batch_size='"${ENV_BATCH_SIZE}"''
+COMMAND='rm '"${LOG_DIR}"' -Rf; '"${LEARNER_BINARY}"' --logtostderr --init_checkpoint '"${CKPT_PATH}"' --logdir '"${LOG_DIR}"' --sub_task '"${SUB_TASK}"' --pdb_post_mortem --num_envs='"${NUM_ENVS}"' --env_batch_size='"${ENV_BATCH_SIZE}"''
+# COMMAND='rm '"${LOG_DIR}"' -Rf; '"${LEARNER_BINARY}"' --logtostderr --logdir '"${LOG_DIR}"' --sub_task '"${SUB_TASK}"' --pdb_post_mortem --num_envs='"${NUM_ENVS}"' --env_batch_size='"${ENV_BATCH_SIZE}"''
 echo $COMMAND
 tmux send-keys -t "learner" "$COMMAND" ENTER
 

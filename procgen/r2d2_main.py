@@ -24,19 +24,20 @@ from absl import flags
 from seed_rl.agents.r2d2 import learner
 from seed_rl.procgen import env
 from seed_rl.procgen import networks
-from seed_rl.common import actor
+from seed_rl.common import procgen_sampler
 from seed_rl.common import common_flags  
 import tensorflow as tf
-
+import os
 
 
 FLAGS = flags.FLAGS
 
 # Optimizer settings.
-flags.DEFINE_float('learning_rate', 5e-4, 'Learning rate.')
+flags.DEFINE_float('learning_rate', 1e-4, 'Learning rate.')
 flags.DEFINE_float('adam_epsilon', 1e-3, 'Adam epsilon.')
 flags.DEFINE_string('sub_task', 'all', 'sub tasks')
-
+flags.DEFINE_list('task_names', [], 'names of tasks')
+flags.DEFINE_float('reward_threshold', 0., 'reward threshold for sampling')
 
 def create_agent(env_output_specs, num_actions):
   return networks.DuelingLSTMDQNNet(
@@ -52,11 +53,24 @@ def create_optimizer(final_iteration):
   return optimizer, learning_rate_fn
 
 def main(argv):
+  if FLAGS.sub_task == 'all':
+    FLAGS.task_names = env.games.keys()
+  else:
+    FLAGS.task_names = [FLAGS.sub_task]
   if len(argv) > 1:
     raise app.UsageError('Too many command-line arguments.')
+  print('task')
+  print(FLAGS.sub_task)
+  print('subtask names')
+  print(FLAGS.task_names)
+  FLAGS.reward_threshold = env.games[FLAGS.sub_task][2]
   if FLAGS.run_mode == 'actor':
-    actor.actor_loop(env.create_environment)
+    procgen_sampler.actor_loop(env.create_environment)
   elif FLAGS.run_mode == 'learner':
+    for i in range(len(FLAGS.task_names)):
+      cur_path = FLAGS.logdir + '/' + FLAGS.task_names[i] + '_dataset'
+      if not os.path.exists(cur_path):
+        os.makedirs(cur_path)
     learner.learner_loop(env.create_environment,
                          create_agent,
                          create_optimizer)

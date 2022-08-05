@@ -42,7 +42,7 @@ import tensorflow as tf
 
 flags.DEFINE_integer('save_checkpoint_secs', 1800,
                      'Checkpoint save period in seconds.')
-flags.DEFINE_integer('total_environment_frames', int(2e8),
+flags.DEFINE_integer('total_environment_frames', int(1e9),
                      'Total environment frames to train for.')
 flags.DEFINE_integer('batch_size', 64, 'Batch size for training.')
 flags.DEFINE_float('replay_ratio', 1.5,
@@ -55,7 +55,7 @@ flags.DEFINE_integer('inference_batch_size', -1,
 flags.DEFINE_integer('unroll_length', 100, 'Unroll length in agent steps.')
 flags.DEFINE_integer('num_training_tpus', 1, 'Number of TPUs for training.')
 flags.DEFINE_integer('update_target_every_n_step',
-                     2500,
+                     200,
                      'Update the target network at this frequency (expressed '
                      'in number of training steps)')
 flags.DEFINE_integer('replay_buffer_size', int(1e4),
@@ -502,11 +502,12 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   strategy, inference_devices, training_strategy, encode, decode = settings
   env = create_env_fn(0, FLAGS)
   FLAGS.num_action_repeats = 1
+  # print(env.observation_space)
+  # print(env.action_space)
   env_output_specs = utils.EnvOutput(
       tf.TensorSpec([], tf.float32, 'reward'),
       tf.TensorSpec([], tf.bool, 'done'),
-      tf.TensorSpec(env.observation_space.shape, env.observation_space.dtype,
-                    'observation'),
+      tf.TensorSpec(env.observation_space.shape, env.observation_space.dtype,'observation'),
       tf.TensorSpec([], tf.bool, 'abandoned'),
       tf.TensorSpec([], tf.int32, 'episode_step'),
   )

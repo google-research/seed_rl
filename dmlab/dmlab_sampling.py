@@ -67,13 +67,19 @@ def main(argv):
     FLAGS.task_names = games.DMLAB_26
   else:
     FLAGS.task_names = [FLAGS.sub_task]
-  for i in range(len(FLAGS.task_names)):
-    os.makedirs(FLAGS.logdir + '/' + FLAGS.task_names[i] + 'dataset')
+  print('task')
+  print(FLAGS.sub_task)
+  print('subtask names')
+  print(FLAGS.task_names)
   if len(argv) > 1:
     raise app.UsageError('Too many command-line arguments.')
   if FLAGS.run_mode == 'actor':
     sampler_actor.actor_loop(env.create_environment)
   elif FLAGS.run_mode == 'learner':
+    for i in range(len(FLAGS.task_names)):
+      cur_path = FLAGS.logdir + '/' + FLAGS.task_names[i] + '_dataset'
+      if not os.path.exists(cur_path):
+        os.makedirs(cur_path)
     sampler.learner_loop(env.create_environment,
                          create_agent,
                          create_optimizer)

@@ -306,8 +306,9 @@ class DuelingLSTMDQNNet(tf.Module):
   def _torso(self, prev_action, env_output):
     # [batch_size, output_units]
     # conv_out = self._body(env_output.observation)
-
-    conv_out = env_output.observation
+    frame = tf.cast(env_output.observation, tf.float32)
+    frame /= 255
+    conv_out = frame
     for stack in self._stacks:
       conv_out = stack(conv_out)
     conv_out = tf.nn.relu(conv_out)

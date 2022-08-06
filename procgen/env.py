@@ -20,7 +20,7 @@ from absl import flags
 from absl import logging
 from procgen import ProcgenEnv
 from seed_rl.common import common_flags
-
+import gym
 
 games = {
         "bigfish": ["procgen:procgen-bigfish-v0", "hard", 20.],
@@ -55,10 +55,13 @@ def create_environment(task, config):
         game_list = games.values()
         full_game_name = game_list[task % 16]
         game_difficulty = games[game_list[task % 16]][1]
-    # env = gym.make(full_game_name, distribution_mode=game_difficulty,
-    #                 start_level=0, num_levels=100000)
-    env = ProcgenEnv(num_envs=config.env_batch_size, env_name=full_game_name, num_levels=100000, start_level=0, distribution_mode=game_difficulty)
-    env.observation_space = env.observation_space['rgb']
+
+    env = gym.make("procgen:procgen-" + full_game_name + "-v0", distribution_mode=game_difficulty,
+                    start_level=0, num_levels=100000)
+
+    # env = ProcgenEnv(num_envs=config.env_batch_size, env_name=full_game_name, num_levels=100000, start_level=0, distribution_mode=game_difficulty)
+    # env.observation_space = env.observation_space['rgb']
+
     logging.info('Creating environment: %s', full_game_name)
     logging.info('Distribution mode: %s', game_difficulty)
     logging.info(env.observation_space)

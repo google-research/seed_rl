@@ -75,7 +75,7 @@ def are_summaries_enabled():
   return FLAGS.task < FLAGS.num_actors_with_summaries
 
 
-def actor_loop(create_env_fn, config=None, log_period=1):
+def actor_loop(create_env_fn, config=None, log_period=10):
   """Main actor loop.
 
   Args:
@@ -134,8 +134,8 @@ def actor_loop(create_env_fn, config=None, log_period=1):
         observation = batched_env.reset()
         reward = np.zeros(env_batch_size, np.float32)
         raw_reward = np.zeros(env_batch_size, np.float32)
-        done = np.zeros(env_batch_size, np.bool)
-        abandoned = np.zeros(env_batch_size, np.bool)
+        done = np.zeros(env_batch_size, np.bool_)
+        abandoned = np.zeros(env_batch_size, np.bool_)
         global_step = 0
         episode_step = np.zeros(env_batch_size, np.int32)
         episode_return = np.zeros(env_batch_size, np.float32)
@@ -156,12 +156,9 @@ def actor_loop(create_env_fn, config=None, log_period=1):
         last_log_time = timeit.default_timer()
         last_global_step = 0
         while True:
-          for i in range(env_batch_size):
-            # print(i)
-            # print(observation[i].shape)
-            # print(observation[i])
-            # obsBuffer[i].append(observation['rgb'][i])
-            obsBuffer[i].append(observation[i])
+          # for i in range(env_batch_size):
+          #   # obsBuffer[i].append(observation['rgb'][i])
+          #   obsBuffer[i].append(observation[i])
           tf.summary.experimental.set_step(actor_step)
           # env_output = utils.EnvOutput(reward, done, observation['rgb'],
           #                              abandoned, episode_step)
@@ -175,48 +172,18 @@ def actor_loop(create_env_fn, config=None, log_period=1):
           # if is_rendering_enabled:
           #   batched_env.render()
           for i in range(env_batch_size):
-            actionsBuffer[i].append(action.numpy()[i])
-            rewardBuffer[i].append(reward[i])
-            terminalBuffer[i].append(done[i])
-            infos1Buffer[i].append(info[i]['prev_level_seed'])
-            infos3Buffer[i].append(info[i]['prev_level_complete'])
-            infos2Buffer[i].append(info[i]['level_seed'])
+            # actionsBuffer[i].append(action.numpy()[i])
+            # rewardBuffer[i].append(reward[i])
+            # terminalBuffer[i].append(done[i])
+            # infos1Buffer[i].append(info[i]['prev_level_seed'])
+            # infos3Buffer[i].append(info[i]['prev_level_complete'])
+            # infos2Buffer[i].append(info[i]['level_seed'])
             episode_step[i] += 1
             episode_return[i] += reward[i]
             raw_reward[i] = float((info[i] or {}).get('score_reward',
                                                       reward[i]))
             episode_raw_return[i] += raw_reward[i]
-            # If the info dict contains an entry abandoned=True and the
-            # episode was ended (done=True), then we need to specially handle
-            # the final transition as per the explanations below.
-            abandoned[i] = (info[i] or {}).get('abandoned', False)
-            assert done[i] if abandoned[i] else True
             if done[i]:
-              # append_data(data, obs, act, rew, infos, done)
-              # If the episode was abandoned, we need to report the final
-              # transition including the final observation as if the episode has
-              # not terminated yet. This way, learning algorithms can use the
-              # transition for learning.
-              if abandoned[i]:
-                # We do not signal yet that the episode was abandoned. This will
-                # happen for the transition from the terminal state to the
-                # resetted state.
-                assert env_batch_size == 1 and i == 0, (
-                    'Mixing of batched and non-batched inference calls is not '
-                    'yet supported')
-                # env_output = utils.EnvOutput(reward,
-                #                              np.array([False]), observation['rgb'],
-                #                              np.array([False]), episode_step)
-
-                env_output = utils.EnvOutput(reward,
-                                             np.array([False]), observation,
-                                             np.array([False]), episode_step)
-                with elapsed_inference_s_timer:
-                  # action is ignored
-                  client.inference(env_id, run_id, env_output, raw_reward)
-                reward[i] = 0.0
-                raw_reward[i] = 0.0
-
               # Periodically log statistics.
               current_time = timeit.default_timer()
               episode_step_sum += episode_step[i]
@@ -231,16 +198,10 @@ def actor_loop(create_env_fn, config=None, log_period=1):
                 avg_ep_reward += episode_raw_return[i]
                 append_data(data2save, obsBuffer[i], actionsBuffer[i], rewardBuffer[i], infos1Buffer[i], infos2Buffer[i], infos3Buffer[i], terminalBuffer[i])
                 total_eps += 1
-              obsBuffer[i] = []
-              actionsBuffer[i] = []
-              rewardBuffer[i] = []
-              terminalBuffer[i] = []
-              infos1Buffer[i] = []
-              infos3Buffer[i] = []
-              infos2Buffer[i] = []
               if cur_trans_num >= FLAGS.save_interval:
                 total_transitions += cur_trans_num
-                logging.info(f'saving data, save idx: {save_idx} env idx: {actor_idx} cur transitions: {cur_trans_num} tt transitions: {total_transitions} episodes: {cur_ep_num}')
+                pid = os.getpid()
+                logging.info(f'pid: {pid} saving data, save idx: {save_idx} env idx: {actor_idx} cur transitions: {cur_trans_num} tt transitions: {total_transitions} episodes: {cur_ep_num}')
                 dataset2save = h5py.File(FLAGS.logdir + '/' + FLAGS.task_names[actor_idx % len(FLAGS.task_names)] + '_dataset/' + str(actor_idx) + '_' + str(save_idx) + '.hdf5', 'w')
                 save_idx += 1
                 cur_trans_num = 0
@@ -251,9 +212,10 @@ def actor_loop(create_env_fn, config=None, log_period=1):
                 data2save = reset_data()
 
               if current_time - last_log_time >= log_period:
+                pid = os.getpid()
                 logging.info(
-                    'Actor steps: %i, Return: %f Raw return: %f '
-                    'Episode steps: %f, Speed: %f steps/s', global_step,
+                    'PID: %i Actor steps: %i, Return: %f Raw return: %f '
+                    'Episode steps: %f, Speed: %f steps/s', pid, global_step,
                     episode_return_sum / episodes_in_report,
                     episode_raw_return_sum / episodes_in_report,
                     episode_step_sum / episodes_in_report,
@@ -265,10 +227,16 @@ def actor_loop(create_env_fn, config=None, log_period=1):
                 episode_step_sum = 0
                 episodes_in_report = 0
                 last_log_time = current_time
-
               episode_step[i] = 0
               episode_return[i] = 0
               episode_raw_return[i] = 0
+              obsBuffer[i] = []
+              actionsBuffer[i] = []
+              rewardBuffer[i] = []
+              terminalBuffer[i] = []
+              infos1Buffer[i] = []
+              infos3Buffer[i] = []
+              infos2Buffer[i] = []
 
           # Finally, we reset the episode which will report the transition
           # from the terminal state to the resetted state in the next loop

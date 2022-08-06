@@ -251,13 +251,6 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     # iterations = optimizer.iterations
     optimizer._create_hypers()  
     optimizer._create_slots(agent.trainable_variables)  
-    ckpt = tf.train.Checkpoint(agent=agent, optimizer=optimizer)
-    if FLAGS.init_checkpoint is not None:
-      tf.print('Loading initial checkpoint from %s...' % FLAGS.init_checkpoint)
-      ckpt.restore(FLAGS.init_checkpoint).assert_consumed()
-    elif FLAGS.init_model is not None:
-      agent = tf.saved_model.load(export_dir=FLAGS.init_model)
-
     # ON_READ causes the replicated variable to act as independent variables for
     # each replica.
     # temp_grads = [
@@ -310,7 +303,12 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   #     FLAGS.logdir, flush_millis=20000, max_queue=1000)
   # logger = utils.ProgressLogger(summary_writer=summary_writer,
   #                               starting_step=iterations * iter_frame_ratio)
-
+  ckpt = tf.train.Checkpoint(agent=agent, optimizer=optimizer)
+  if FLAGS.init_checkpoint is not None:
+    tf.print('Loading initial checkpoint from %s...' % FLAGS.init_checkpoint)
+    ckpt.restore(FLAGS.init_checkpoint).assert_consumed()
+  elif FLAGS.init_model is not None:
+    agent = tf.saved_model.load(export_dir=FLAGS.init_model)
   servers = []
   # unroll_queues = []
   info_specs = (

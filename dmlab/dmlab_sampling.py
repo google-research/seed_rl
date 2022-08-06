@@ -23,7 +23,7 @@ from absl import app
 from absl import flags
 
 from seed_rl.agents.vtrace import sampler
-from seed_rl.common import sampler_actor
+from seed_rl.common import dmlab_sampler
 from seed_rl.common import common_flags  
 from seed_rl.dmlab import env
 from seed_rl.dmlab import networks
@@ -74,7 +74,7 @@ def main(argv):
   if len(argv) > 1:
     raise app.UsageError('Too many command-line arguments.')
   if FLAGS.run_mode == 'actor':
-    sampler_actor.actor_loop(env.create_environment)
+    dmlab_sampler.actor_loop(env.create_environment)
   elif FLAGS.run_mode == 'learner':
     for i in range(len(FLAGS.task_names)):
       cur_path = FLAGS.logdir + '/' + FLAGS.task_names[i] + '_dataset'

@@ -66,7 +66,7 @@ flags.DEFINE_integer('num_actors_with_summaries', 4,
                      'summaries.')
 flags.DEFINE_bool('render', False,
                   'Whether the first actor should render the environment.')
-flags.DEFINE_integer('save_interval', int(1e3), 'save interval')
+flags.DEFINE_integer('save_interval', int(1e7), 'save interval')
 flags.DEFINE_integer('save_num', 10, 'save num')
 
 

@@ -55,7 +55,7 @@ flags.DEFINE_integer('inference_batch_size', -1,
 flags.DEFINE_integer('unroll_length', 100, 'Unroll length in agent steps.')
 flags.DEFINE_integer('num_training_tpus', 1, 'Number of TPUs for training.')
 flags.DEFINE_integer('update_target_every_n_step',
-                     200,
+                     600,
                      'Update the target network at this frequency (expressed '
                      'in number of training steps)')
 flags.DEFINE_integer('replay_buffer_size', int(1e4),

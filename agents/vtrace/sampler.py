@@ -368,7 +368,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
           if tf.not_equal(tf.shape(envs_needing_reset)[0], 0):
             tf.print('Environment ids needing reset:', envs_needing_reset)
           env_infos.reset(envs_needing_reset)
-          store.reset(envs_needing_reset)
+          # store.reset(envs_needing_reset)
           initial_agent_states = agent.initial_state(
               tf.shape(envs_needing_reset)[0])
           first_agent_states.replace(envs_needing_reset, initial_agent_states)

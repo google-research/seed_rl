@@ -67,7 +67,7 @@ flags.DEFINE_integer('num_actors_with_summaries', 4,
                      'summaries.')
 flags.DEFINE_bool('render', False,
                   'Whether the first actor should render the environment.')
-flags.DEFINE_integer('save_interval', int(1e6), 'save interval')
+flags.DEFINE_integer('save_interval', int(1e5), 'save interval')
 flags.DEFINE_integer('save_num', 10, 'save num')
 
 
@@ -94,6 +94,7 @@ def actor_loop(create_env_fn, config=None, log_period=10):
   avg_ep_reward = 0
   actor_idx = FLAGS.task
   env_batch_size = FLAGS.env_batch_size
+  pid = os.getpid()
   # dummy_infos = np.array(0, dtype=np.uint8)
   logging.info('Starting actor loop. Task: %r. Environment batch size: %r',
                FLAGS.task, env_batch_size)
@@ -156,9 +157,9 @@ def actor_loop(create_env_fn, config=None, log_period=10):
         last_log_time = timeit.default_timer()
         last_global_step = 0
         while True:
-          # for i in range(env_batch_size):
-          #   # obsBuffer[i].append(observation['rgb'][i])
-          #   obsBuffer[i].append(observation[i])
+          for i in range(env_batch_size):
+            # obsBuffer[i].append(observation['rgb'][i])
+            obsBuffer[i].append(observation[i])
           tf.summary.experimental.set_step(actor_step)
           # env_output = utils.EnvOutput(reward, done, observation['rgb'],
           #                              abandoned, episode_step)
@@ -172,12 +173,12 @@ def actor_loop(create_env_fn, config=None, log_period=10):
           # if is_rendering_enabled:
           #   batched_env.render()
           for i in range(env_batch_size):
-            # actionsBuffer[i].append(action.numpy()[i])
-            # rewardBuffer[i].append(reward[i])
-            # terminalBuffer[i].append(done[i])
-            # infos1Buffer[i].append(info[i]['prev_level_seed'])
-            # infos3Buffer[i].append(info[i]['prev_level_complete'])
-            # infos2Buffer[i].append(info[i]['level_seed'])
+            actionsBuffer[i].append(action.numpy()[i])
+            rewardBuffer[i].append(reward[i])
+            terminalBuffer[i].append(done[i])
+            infos1Buffer[i].append(info[i]['prev_level_seed'])
+            infos3Buffer[i].append(info[i]['prev_level_complete'])
+            infos2Buffer[i].append(info[i]['level_seed'])
             episode_step[i] += 1
             episode_return[i] += reward[i]
             raw_reward[i] = float((info[i] or {}).get('score_reward',
@@ -200,7 +201,6 @@ def actor_loop(create_env_fn, config=None, log_period=10):
                 total_eps += 1
               if cur_trans_num >= FLAGS.save_interval:
                 total_transitions += cur_trans_num
-                pid = os.getpid()
                 logging.info(f'pid: {pid} saving data, save idx: {save_idx} env idx: {actor_idx} cur transitions: {cur_trans_num} tt transitions: {total_transitions} episodes: {cur_ep_num}')
                 dataset2save = h5py.File(FLAGS.logdir + '/' + FLAGS.task_names[actor_idx % len(FLAGS.task_names)] + '_dataset/' + str(actor_idx) + '_' + str(save_idx) + '.hdf5', 'w')
                 save_idx += 1
@@ -209,10 +209,10 @@ def actor_loop(create_env_fn, config=None, log_period=10):
                 npify(data2save)
                 for k in data2save:
                     dataset2save.create_dataset(k, data=data2save[k], compression='gzip')
+                del data2save
                 data2save = reset_data()
 
               if current_time - last_log_time >= log_period:
-                pid = os.getpid()
                 logging.info(
                     'PID: %i Actor steps: %i, Return: %f Raw return: %f '
                     'Episode steps: %f, Speed: %f steps/s', pid, global_step,
@@ -227,16 +227,32 @@ def actor_loop(create_env_fn, config=None, log_period=10):
                 episode_step_sum = 0
                 episodes_in_report = 0
                 last_log_time = current_time
+                # bufferLen = [0 for i in range(7)]
+                # for i in range(env_batch_size):
+                #   bufferLen[0] += len(obsBuffer[i])
+                #   bufferLen[1] += len(actionsBuffer[i])
+                #   bufferLen[2] += len(rewardBuffer[i])
+                #   bufferLen[3] += len(terminalBuffer[i])
+                #   bufferLen[4] += len(infos1Buffer[i])
+                #   bufferLen[5] += len(infos3Buffer[i])
+                #   bufferLen[6] += len(infos2Buffer[i])
+                # logging.info('buffer length:')
+                # logging.info(bufferLen)
+                # dataLen = []
+                # for k in data2save:
+                #   dataLen.append(len(data2save[k]))
+                # logging.info('data2save length:')
+                # logging.info(dataLen)
               episode_step[i] = 0
               episode_return[i] = 0
               episode_raw_return[i] = 0
-              obsBuffer[i] = []
-              actionsBuffer[i] = []
-              rewardBuffer[i] = []
-              terminalBuffer[i] = []
-              infos1Buffer[i] = []
-              infos3Buffer[i] = []
-              infos2Buffer[i] = []
+              obsBuffer[i].clear()
+              actionsBuffer[i].clear()
+              rewardBuffer[i].clear()
+              terminalBuffer[i].clear()
+              infos1Buffer[i].clear()
+              infos3Buffer[i].clear()
+              infos2Buffer[i].clear()
 
           # Finally, we reset the episode which will report the transition
           # from the terminal state to the resetted state in the next loop

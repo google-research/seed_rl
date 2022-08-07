@@ -156,6 +156,52 @@ ALL_GAMES = frozenset([
     'explore_object_rewards_many',
 ])
 
+rooms = [
+    'rooms_collect_good_objects_train',
+    'rooms_exploit_deferred_effects_train',
+    'rooms_select_nonmatching_object',
+    'rooms_watermaze',
+    'rooms_keys_doors_puzzle',
+]
+
+lasers = [
+    'lasertag_one_opponent_small',
+    'lasertag_three_opponents_small',
+    'lasertag_one_opponent_large',
+    'lasertag_three_opponents_large',
+]
+
+explore = [
+    'explore_object_locations_small',
+    'explore_object_locations_large',
+    'explore_obstructed_goals_small',
+    'explore_obstructed_goals_large',
+    'explore_goal_locations_small',
+    'explore_goal_locations_large',
+    'explore_object_rewards_few',
+    'explore_object_rewards_many',
+]
+
+psych = [
+    'psychlab_arbitrary_visuomotor_mapping',
+    'psychlab_continuous_recognition',
+    'psychlab_sequential_comparison',
+    'psychlab_visual_search',
+]
+
+
+nat = [
+    'natlab_fixed_large_map',
+    'natlab_varying_map_regrowth',
+    'natlab_varying_map_randomized',
+]
+
+sky = [
+    'skymaze_irreversible_path_hard',
+    'skymaze_irreversible_path_varied',
+]
+
+
 DMLAB_30 = [
     'rooms_collect_good_objects_train',
     'rooms_exploit_deferred_effects_train',

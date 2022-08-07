@@ -31,42 +31,6 @@ from seed_rl.common.parametric_distribution import get_parametric_distribution_f
 
 import tensorflow as tf
 
-
-
-
-# Training.
-flags.DEFINE_integer('save_checkpoint_secs', 1800,
-                     'Checkpoint save period in seconds.')
-flags.DEFINE_integer('total_environment_frames', int(1e10),
-                     'Total environment frames to train for.')
-flags.DEFINE_integer('batch_size', 32, 'Batch size for training.')
-flags.DEFINE_integer('inference_batch_size', -1,
-                     'Batch size for inference, -1 for auto-tune.')
-flags.DEFINE_integer('unroll_length', 100, 'Unroll length in agent steps.')
-flags.DEFINE_integer('num_training_tpus', 1, 'Number of TPUs for training.')
-flags.DEFINE_string('init_checkpoint', None,
-                    'Path to the checkpoint used to initialize the agent.')
-
-# Loss settings.
-flags.DEFINE_float('entropy_cost', 0.0033391318945337044, 'Entropy cost/multiplier.')
-flags.DEFINE_float('target_entropy', None, 'If not None, the entropy cost is '
-                   'automatically adjusted to reach the desired entropy level.')
-flags.DEFINE_float('entropy_cost_adjustment_speed', 10., 'Controls how fast '
-                   'the entropy cost coefficient is adjusted.')
-flags.DEFINE_float('baseline_cost', .5, 'Baseline cost/multiplier.')
-flags.DEFINE_float('kl_cost', 0., 'KL(old_policy|new_policy) loss multiplier.')
-flags.DEFINE_float('discounting', .99, 'Discounting factor.')
-flags.DEFINE_float('lambda_', 1., 'Lambda.')
-flags.DEFINE_float('max_abs_reward', 0.,
-                   'Maximum absolute reward when calculating loss.'
-                   'Use 0. to disable clipping.')
-
-# Logging
-flags.DEFINE_integer('log_batch_frequency', 100, 'We average that many batches '
-                     'before logging batch statistics like entropy.')
-flags.DEFINE_integer('log_episode_frequency', 1, 'We average that many episodes'
-                     ' before logging average episode return and length.')
-
 FLAGS = flags.FLAGS
 
 EpisodeInfo = collections.namedtuple(
@@ -298,7 +262,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
     with strategy.scope():
       ckpt.restore(FLAGS.init_checkpoint).assert_consumed()
   manager = tf.train.CheckpointManager(
-      ckpt, FLAGS.logdir, max_to_keep=50, keep_checkpoint_every_n_hours=6)
+      ckpt, FLAGS.logdir, max_to_keep=200, keep_checkpoint_every_n_hours=6)
   last_ckpt_time = 0  # Force checkpointing of the initial model.
   if manager.latest_checkpoint:
     logging.info('Restoring checkpoint: %s', manager.latest_checkpoint)
@@ -472,13 +436,19 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
       #   for value in tf.split(values,
       #                         values.shape[0] // FLAGS.log_episode_frequency):
       #     tf.summary.scalar(key, tf.reduce_mean(value))
-
-      for (frames, ep_return, raw_return, env_id) in zip(*episode_stats):
+      frames = [0 for i in range(len(FLAGS.task_names))]
+      ep_returns = [0 for i in range(len(FLAGS.task_names))]
+      env_counts = [0 for i in range(len(FLAGS.task_names))]
+      for (frame, ep_return, raw_return, env_id) in zip(*episode_stats):
         logging.info('Return: %f Raw return: %f Frames: %i Env id: %i', ep_return,
-                     raw_return, frames, env_id)
-        tf.summary.scalar('subtasks/' + FLAGS.task_names[env_id % len(FLAGS.task_names)] + '/episode_num_frames', frames)
-        tf.summary.scalar('subtasks/' + FLAGS.task_names[env_id % len(FLAGS.task_names)] + '/episode_return', ep_return)
-        tf.summary.scalar('subtasks/' + FLAGS.task_names[env_id % len(FLAGS.task_names)] + '/episode_raw_return', raw_return)
+                     raw_return, frame, env_id)
+        env_counts[env_id % len(FLAGS.task_names)] += 1
+        frames[env_id % len(FLAGS.task_names)] += frame
+        ep_returns[env_id % len(FLAGS.task_names)] += ep_return
+      for idx, env_count in enumerate(env_counts):
+        if env_count != 0:
+          tf.summary.scalar('subtasks/' + FLAGS.task_names[idx] + '/episode_num_frames', frames[idx] / env_count)
+          tf.summary.scalar('subtasks/' + FLAGS.task_names[idx] + '/episode_return', ep_returns[idx] / env_count)
 
   logger.start(additional_logs)
   # Execute learning.

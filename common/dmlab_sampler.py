@@ -71,8 +71,8 @@ flags.DEFINE_integer('num_actors_with_summaries', 4,
                      'summaries.')
 flags.DEFINE_bool('render', False,
                   'Whether the first actor should render the environment.')
-flags.DEFINE_integer('save_interval', int(1e6), 'save interval')
-flags.DEFINE_integer('save_num', 10, 'save num')
+flags.DEFINE_integer('save_interval', int(1e5), 'save interval')
+flags.DEFINE_integer('save_num', 500, 'save num')
 
 
 def are_summaries_enabled():
@@ -88,6 +88,7 @@ def actor_loop(create_env_fn, config=None, log_period=30):
     config: Configuration of the training.
     log_period: How often to log in seconds.
   """
+  FLAGS.reward_threshold = 30
   if not config:
     config = FLAGS
   save_idx = 0
@@ -174,24 +175,51 @@ def actor_loop(create_env_fn, config=None, log_period=30):
             raw_reward[i] = float((info[i] or {}).get('score_reward',
                                                       reward[i]))
             episode_raw_return[i] += raw_reward[i]
+            # If the info dict contains an entry abandoned=True and the
+            # episode was ended (done=True), then we need to specially handle
+            # the final transition as per the explanations below.
+            abandoned[i] = (info[i] or {}).get('abandoned', False)
+            assert done[i] if abandoned[i] else True
             if done[i]:
+              # If the episode was abandoned, we need to report the final
+              # transition including the final observation as if the episode has
+              # not terminated yet. This way, learning algorithms can use the
+              # transition for learning.
+              if abandoned[i]:
+                # We do not signal yet that the episode was abandoned. This will
+                # happen for the transition from the terminal state to the
+                # resetted state.
+                assert env_batch_size == 1 and i == 0, (
+                    'Mixing of batched and non-batched inference calls is not '
+                    'yet supported')
+                env_output = utils.EnvOutput(reward,
+                                             np.array([False]), observation,
+                                             np.array([False]), episode_step)
+                with elapsed_inference_s_timer:
+                  # action is ignored
+                  client.inference(env_id, run_id, env_output, raw_reward)
+                reward[i] = 0.0
+                raw_reward[i] = 0.0
               # append_data(data, obs, act, rew, infos, done)
               if episode_raw_return[i] >= FLAGS.reward_threshold:
                 cur_trans_num += episode_step[i]
                 cur_ep_num += 1
                 avg_ep_reward += episode_raw_return[i]
                 append_data(data2save, obsBuffer[i], actionsBuffer[i], rewardBuffer[i], infosBuffer[i], terminalBuffer[i])
+                logging.info(f'pid: {pid} adding data, save idx: {save_idx} env idx: {actor_idx} cur transitions: {cur_trans_num}  cur episodes: {cur_ep_num} tt transitions: {total_transitions}')
               if cur_trans_num >= FLAGS.save_interval:
                 total_transitions += cur_trans_num
                 total_eps += cur_ep_num
                 logging.info(f'pid: {pid} saving data, save idx: {save_idx} env idx: {actor_idx} cur transitions: {cur_trans_num}  cur episodes: {cur_ep_num} tt transitions: {total_transitions}')
                 dataset2save = h5py.File(FLAGS.logdir + '/' + FLAGS.task_names[actor_idx % len(FLAGS.task_names)] + '_dataset/' + str(actor_idx) + '_' + str(save_idx) + '.hdf5', 'w')
                 save_idx += 1
+                save_idx %= FLAGS.save_num
                 cur_trans_num = 0
                 cur_ep_num = 0
                 npify(data2save)
                 for k in data2save:
                     dataset2save.create_dataset(k, data=data2save[k], compression='gzip')
+                del data2save
                 data2save = reset_data()
 
               # Periodically log statistics.

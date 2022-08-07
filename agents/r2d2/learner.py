@@ -40,7 +40,7 @@ from seed_rl.common import common_flags
 from seed_rl.common import utils
 import tensorflow as tf
 
-flags.DEFINE_integer('save_checkpoint_secs', 1800,
+flags.DEFINE_integer('save_checkpoint_secs', 900,
                      'Checkpoint save period in seconds.')
 flags.DEFINE_integer('total_environment_frames', int(1e9),
                      'Total environment frames to train for.')
@@ -648,7 +648,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   ckpt = tf.train.Checkpoint(
       agent=agent, target_agent=target_agent, optimizer=optimizer)
   manager = tf.train.CheckpointManager(
-      ckpt, FLAGS.logdir, max_to_keep=50, keep_checkpoint_every_n_hours=6)
+      ckpt, FLAGS.logdir, max_to_keep=100, keep_checkpoint_every_n_hours=6)
   last_ckpt_time = 0  # Force checkpointing of the initial model.
   if manager.latest_checkpoint:
     logging.info('Restoring checkpoint: %s', manager.latest_checkpoint)

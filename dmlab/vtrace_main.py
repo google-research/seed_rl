@@ -29,17 +29,52 @@ from seed_rl.dmlab import env
 from seed_rl.dmlab import networks
 import tensorflow as tf
 from seed_rl.dmlab import games
-
+import os
 FLAGS = flags.FLAGS
 
 # Optimizer settings.
-flags.DEFINE_float('learning_rate', 0.00031866995608948655, 'Learning rate.')
-# flags.DEFINE_float('adam_epsilon', 3.125e-7, 'Adam epsilon.')
+flags.DEFINE_float('learning_rate', 0.0001, 'Learning rate.')
+flags.DEFINE_float('adam_epsilon', .000000003125, 'Adam epsilon.')
 flags.DEFINE_float('rms_epsilon', .1, 'RMS epsilon.')
 flags.DEFINE_float('rms_momentum', 0., 'RMS momentum.')
 flags.DEFINE_float('rms_decay', .99, 'RMS decay.')
 flags.DEFINE_string('sub_task', 'all', 'sub tasks, i.e. dmlab30, dmlab26, all, others')
 flags.DEFINE_list('task_names', [], 'names of tasks')
+flags.DEFINE_list('action_set', [], 'default action set')
+flags.DEFINE_float('reward_threshold', 0., 'reward threshold for sampling')
+
+# Training.
+flags.DEFINE_integer('save_checkpoint_secs', 900,
+                     'Checkpoint save period in seconds.')
+flags.DEFINE_integer('total_environment_frames', int(1e10),
+                     'Total environment frames to train for.')
+flags.DEFINE_integer('batch_size', 32, 'Batch size for training.')
+flags.DEFINE_integer('inference_batch_size', 64,
+                     'Batch size for inference, -1 for auto-tune.')
+flags.DEFINE_integer('unroll_length', 100, 'Unroll length in agent steps.')
+flags.DEFINE_integer('num_training_tpus', 1, 'Number of TPUs for training.')
+flags.DEFINE_string('init_checkpoint', None,
+                    'Path to the checkpoint used to initialize the agent.')
+
+# Loss settings.
+flags.DEFINE_float('entropy_cost', 0.001, 'Entropy cost/multiplier.')
+flags.DEFINE_float('target_entropy', None, 'If not None, the entropy cost is '
+                   'automatically adjusted to reach the desired entropy level.')
+flags.DEFINE_float('entropy_cost_adjustment_speed', 10., 'Controls how fast '
+                   'the entropy cost coefficient is adjusted.')
+flags.DEFINE_float('baseline_cost', .5, 'Baseline cost/multiplier.')
+flags.DEFINE_float('kl_cost', 0., 'KL(old_policy|new_policy) loss multiplier.')
+flags.DEFINE_float('discounting', .99, 'Discounting factor.')
+flags.DEFINE_float('lambda_', .95, 'Lambda.')
+flags.DEFINE_float('max_abs_reward', 0.,
+                   'Maximum absolute reward when calculating loss.'
+                   'Use 0. to disable clipping.')
+
+# Logging
+flags.DEFINE_integer('log_batch_frequency', 100, 'We average that many batches '
+                     'before logging batch statistics like entropy.')
+flags.DEFINE_integer('log_episode_frequency', 100, 'We average that many episodes'
+                     ' before logging average episode return and length.')
 
 def create_agent(action_space, unused_env_observation_space,
                  unused_parametric_action_distribution):
@@ -49,20 +84,33 @@ def create_agent(action_space, unused_env_observation_space,
 def create_optimizer(final_iteration):
   learning_rate_fn = tf.keras.optimizers.schedules.PolynomialDecay(
       FLAGS.learning_rate, final_iteration, 0)
-  # optimizer = tf.keras.optimizers.Adam(learning_rate_fn, beta_1=0,
-  #                                      epsilon=FLAGS.adam_epsilon)
-  optimizer = tf.keras.optimizers.RMSprop(learning_rate_fn, FLAGS.rms_decay, FLAGS.rms_momentum,
-                                       FLAGS.rms_epsilon)
+  optimizer = tf.keras.optimizers.Adam(learning_rate_fn, beta_1=0,
+                                       epsilon=FLAGS.adam_epsilon)
+#   optimizer = tf.keras.optimizers.RMSprop(learning_rate_fn, FLAGS.rms_decay, FLAGS.rms_momentum,
+#                                        FLAGS.rms_epsilon)
   return optimizer, learning_rate_fn
 
 
 def main(argv):
+  FLAGS.action_set = env.DEFAULT_ACTION_SET
   if FLAGS.sub_task == 'dmlab30':
     FLAGS.task_names = games.DMLAB_30
   elif FLAGS.sub_task == 'others':
     FLAGS.task_names = games.OTHERS
   elif FLAGS.sub_task == 'dmlab26':
     FLAGS.task_names = games.DMLAB_26
+  elif FLAGS.sub_task == 'sky':
+    FLAGS.task_names = games.sky
+  elif FLAGS.sub_task == 'nat':
+    FLAGS.task_names = games.nat
+  elif FLAGS.sub_task == 'psych':
+    FLAGS.task_names = games.psych
+  elif FLAGS.sub_task == 'explore':
+    FLAGS.task_names = games.explore
+  elif FLAGS.sub_task == 'lasers':
+    FLAGS.task_names = games.lasers
+  elif FLAGS.sub_task == 'rooms':
+    FLAGS.task_names = games.rooms
   else:
     FLAGS.task_names = [FLAGS.sub_task]
   if len(argv) > 1:
@@ -70,6 +118,10 @@ def main(argv):
   if FLAGS.run_mode == 'actor':
     actor.actor_loop(env.create_environment)
   elif FLAGS.run_mode == 'learner':
+    # for i in range(len(FLAGS.task_names)):
+    #   cur_path = FLAGS.logdir + '/' + FLAGS.task_names[i] + '_dataset'
+    #   if not os.path.exists(cur_path):
+    #     os.makedirs(cur_path)
     learner.learner_loop(env.create_environment,
                          create_agent,
                          create_optimizer)

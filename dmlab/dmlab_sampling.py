@@ -23,7 +23,7 @@ from absl import app
 from absl import flags
 
 from seed_rl.agents.vtrace import sampler
-from seed_rl.common import dmlab_sampler
+from seed_rl.common import actor
 from seed_rl.common import common_flags  
 from seed_rl.dmlab import env
 from seed_rl.dmlab import networks
@@ -50,10 +50,9 @@ def create_agent(action_space, unused_env_observation_space,
 def create_optimizer(final_iteration):
   learning_rate_fn = tf.keras.optimizers.schedules.PolynomialDecay(
       FLAGS.learning_rate, final_iteration, 0)
-  # optimizer = tf.keras.optimizers.Adam(learning_rate_fn, beta_1=0,
-  #                                      epsilon=FLAGS.adam_epsilon)
-  optimizer = tf.keras.optimizers.RMSprop(learning_rate_fn, FLAGS.rms_decay, FLAGS.rms_momentum,
-                                       FLAGS.rms_epsilon)
+  optimizer = tf.keras.optimizers.Adam(learning_rate_fn, beta_1=0)
+  # optimizer = tf.keras.optimizers.RMSprop(learning_rate_fn, FLAGS.rms_decay, FLAGS.rms_momentum,
+  #                                      FLAGS.rms_epsilon)
   return optimizer, learning_rate_fn
 
 
@@ -74,7 +73,7 @@ def main(argv):
   if len(argv) > 1:
     raise app.UsageError('Too many command-line arguments.')
   if FLAGS.run_mode == 'actor':
-    dmlab_sampler.actor_loop(env.create_environment)
+    actor.actor_loop(env.create_environment)
   elif FLAGS.run_mode == 'learner':
     for i in range(len(FLAGS.task_names)):
       cur_path = FLAGS.logdir + '/' + FLAGS.task_names[i] + '_dataset'

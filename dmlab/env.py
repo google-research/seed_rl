@@ -53,6 +53,31 @@ DEFAULT_ACTION_SET = (
     (0, 0, 0, 0, 1, 0, 0),    # Fire.
 )
 
+NEW_ACTION_SET = (
+    (0, 0, 0, 1, 0, 0, 0),    # Forward
+    (0, 0, 0, -1, 0, 0, 0),   # Backward
+    (0, 0, -1, 0, 0, 0, 0),   # Strafe Left
+    (0, 0, 1, 0, 0, 0, 0),    # Strafe Right
+    (-20, 0, 0, 0, 0, 0, 0),  # Look Left
+    (20, 0, 0, 0, 0, 0, 0),   # Look Right
+    (-20, 0, 0, 1, 0, 0, 0),  # Look Left + Forward
+    (20, 0, 0, 1, 0, 0, 0),   # Look Right + Forward
+    (-40, 0, 0, 0, 0, 0, 0),  # Look Left
+    (40, 0, 0, 0, 0, 0, 0),   # Look Right
+    (-40, 0, 0, 1, 0, 0, 0),  # Look Left + Forward
+    (40, 0, 0, 1, 0, 0, 0),   # Look Right + Forward
+    (0, -20, 0, 0, 0, 0, 0),  # Look DOWN
+    (0, 20, 0, 0, 0, 0, 0),   # Look UP
+    (0, -20, 0, 1, 0, 0, 0),  # Look DOWN + Forward
+    (0, 20, 0, 1, 0, 0, 0),   # Look UP + Forward
+    (0, -40, 0, 0, 0, 0, 0),  # Look DOWN
+    (0, 40, 0, 0, 0, 0, 0),   # Look UP
+    (0, -40, 0, 1, 0, 0, 0),  # Look DOWN + Forward
+    (0, 40, 0, 1, 0, 0, 0),   # Look UP + Forward
+    (0, 0, 0, 0, 1, 0, 0),    # Fire.
+    (0, 0, 0, 0, 0, 1, 0),    # JUMP.
+    (0, 0, 0, 0, 0, 0, 1),    # CROUCH.
+)
 
 class LevelCache(object):
     """Level cache."""
@@ -135,6 +160,18 @@ def create_environment(task, config):
       cur_game = 'contributed/dmlab30/' + games.DMLAB_30[task % len(games.DMLAB_30)]
     elif config.sub_task == "dmlab26":
       cur_game = 'contributed/dmlab30/' + games.DMLAB_26[task % len(games.DMLAB_26)]
+    elif config.sub_task == "sky":
+      cur_game = 'contributed/dmlab30/' + games.sky[task % len(games.sky)]
+    elif config.sub_task == "nat":
+      cur_game = 'contributed/dmlab30/' + games.nat[task % len(games.nat)]
+    elif config.sub_task == "psych":
+      cur_game = 'contributed/dmlab30/' + games.psych[task % len(games.psych)]
+    elif config.sub_task == "explore":
+      cur_game = 'contributed/dmlab30/' + games.explore[task % len(games.explore)]
+    elif config.sub_task == "lasers":
+      cur_game = 'contributed/dmlab30/' + games.lasers[task % len(games.lasers)]
+    elif config.sub_task == "rooms":
+      cur_game = 'contributed/dmlab30/' + games.rooms[task % len(games.rooms)]
     elif config.sub_task == "others":
       cur_game = games.OTHERS[task % len(games.OTHERS)]
     elif config.sub_task in games.DMLAB_30:
@@ -145,7 +182,6 @@ def create_environment(task, config):
       cur_game,
       seed=task,
       is_test=False,
-      level_cache_dir=config.level_cache_dir,
       config={
           'width': config.width,
           'height': config.height,

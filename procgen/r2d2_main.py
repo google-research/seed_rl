@@ -24,7 +24,7 @@ from absl import flags
 from seed_rl.agents.r2d2 import learner
 from seed_rl.procgen import env
 from seed_rl.procgen import networks
-from seed_rl.common import procgen_sampler
+from seed_rl.common import actor
 from seed_rl.common import common_flags  
 import tensorflow as tf
 import os
@@ -65,12 +65,12 @@ def main(argv):
   print(FLAGS.task_names)
   FLAGS.reward_threshold = env.games[FLAGS.sub_task][2]
   if FLAGS.run_mode == 'actor':
-    procgen_sampler.actor_loop(env.create_environment)
+    actor.actor_loop(env.create_environment)
   elif FLAGS.run_mode == 'learner':
-    for i in range(len(FLAGS.task_names)):
-      cur_path = FLAGS.logdir + '/' + FLAGS.task_names[i] + '_dataset'
-      if not os.path.exists(cur_path):
-        os.makedirs(cur_path)
+    # for i in range(len(FLAGS.task_names)):
+    #   cur_path = FLAGS.logdir + '/' + FLAGS.task_names[i] + '_dataset'
+    #   if not os.path.exists(cur_path):
+    #     os.makedirs(cur_path)
     learner.learner_loop(env.create_environment,
                          create_agent,
                          create_optimizer)

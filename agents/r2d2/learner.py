@@ -55,7 +55,7 @@ flags.DEFINE_integer('inference_batch_size', -1,
 flags.DEFINE_integer('unroll_length', 100, 'Unroll length in agent steps.')
 flags.DEFINE_integer('num_training_tpus', 1, 'Number of TPUs for training.')
 flags.DEFINE_integer('update_target_every_n_step',
-                     400,
+                     200,
                      'Update the target network at this frequency (expressed '
                      'in number of training steps)')
 flags.DEFINE_integer('replay_buffer_size', int(1e3),
@@ -874,25 +874,27 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
           episode_info = info_queue.dequeue_many(n_episodes)
           training_ep_frames = 0
           training_ep_return = 0
-          # eval_ep_frames = 0
-          # eval_ep_return = 0
+          eval_ep_frames = 0
+          eval_ep_return = 0
           training_num = 0
-          # eval_num = 0
+          eval_num = 0
           for n, r, _, env_id in zip(*episode_info):
-            # is_training = is_training_env(env_id)
+            is_training = is_training_env(env_id)
             logging.info(
                 'Return: %f Frames: %i Env id: %i (%s) Iteration: %i',
-                r, n, env_id, iterations.numpy())
-            # if is_training:
-            training_ep_frames += n
-            training_ep_return += r
-            training_num += 1
-            # else:
-            #   eval_ep_frames += n
-            #   eval_ep_return += r
-            #   eval_num += 1
-          # tf.summary.scalar('eval/avg_episode_return', 0 if eval_num == 0 else eval_ep_return / eval_num)
-          # tf.summary.scalar('eval/avg_episode_frames', 0 if eval_num == 0 else eval_ep_frames / eval_num)
+                r, n, env_id,
+                'training' if is_training else 'eval',
+                iterations.numpy())
+            if is_training:
+              training_ep_frames += n
+              training_ep_return += r
+              training_num += 1
+            else:
+              eval_ep_frames += n
+              eval_ep_return += r
+              eval_num += 1
+          tf.summary.scalar('eval/avg_episode_return', 0 if eval_num == 0 else eval_ep_return / eval_num)
+          tf.summary.scalar('eval/avg_episode_frames', 0 if eval_num == 0 else eval_ep_frames / eval_num)
           tf.summary.scalar('train/avg_episode_return', 0 if training_num == 0 else training_ep_return / training_num)
           tf.summary.scalar('train/avg_episode_frames', 0 if training_num == 0 else training_ep_frames / training_num)
       log_future.result()  # Raise exception if any occurred in logging.

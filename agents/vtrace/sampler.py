@@ -428,7 +428,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
           # Update steps and return.
           env_infos.add(env_ids, (0, env_outputs.reward, raw_rewards))
           done_ids = tf.gather(env_ids, tf.where(env_outputs.done)[:, 0])
-          
+          dumpDones(trajBuffer, traj2Save, done_ids, num_tasks, eps_count, trans_count)
           if i == 0:
             done_episodes_info = env_infos.read(done_ids)
             info_queue.enqueue_many(EpisodeInfo(*(done_episodes_info + (done_ids,))))
@@ -453,9 +453,6 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
           # in queue.
           completed_ids, unrolls = store.append(
               env_ids, (prev_actions, env_outputs, agent_outputs))
-          # _, _ = trajStore.append(
-          #     env_ids, (prev_actions, env_outputs, agent_outputs))
-          # unrolls = Unroll(first_agent_states.read(completed_ids), *unrolls)
           unroll_queue.enqueue_many(unrolls)
           first_agent_states.replace(completed_ids,
                                      agent_states.read(completed_ids))
@@ -464,6 +461,8 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
           agent_states.replace(env_ids, curr_agent_states)
           actions.replace(env_ids, agent_outputs.action)
           # Return environment actions to environments.
+
+          appendStep(trajBuffer, env_outputs, agent_outputs.action, env_ids)
           # dataBufferQueue.enqueue((env_ids, env_outputs, agent_outputs.action))
           # dataBufferQueue.append((env_ids, env_outputs, agent_outputs.action, done_ids))
           return agent_outputs.action
@@ -528,20 +527,20 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
         tf.summary.scalar('subtasks/' + FLAGS.task_names[env_id % len(FLAGS.task_names)] + '/episode_num_frames', frames)
         tf.summary.scalar('subtasks/' + FLAGS.task_names[env_id % len(FLAGS.task_names)] + '/episode_return', ep_return)
         tf.summary.scalar('subtasks/' + FLAGS.task_names[env_id % len(FLAGS.task_names)] + '/episode_raw_return', raw_return)
-    # for idx in range(num_tasks):
-    #     if len(traj2Save[idx]['observation']) > dataSaveInterval:
-    #         traj2SaveEps[idx] += eps_count[idx]
-    #         traj2SaveTrans[idx] += trans_count[idx]
-    #         logging.info(f'saving data, save idx: {traj2SaveIdx[idx]} task: {task_set[idx]} cur transitions: {trans_count[idx]}  cur episodes: {eps_count[idx]}')
-    #         logging.info(f'saved transitions: {traj2SaveTrans[idx]} saved episodes: {traj2SaveEps[idx]}')
-    #         dataset2save = h5py.File(FLAGS.logdir + '/' + task_set[idx] + '_dataset/' + str(idx) + '_' + str(traj2SaveIdx[idx] % maxSave) + '.hdf5', 'w')
-    #         npify(traj2Save[idx])
-    #         for k in traj2Save[idx]:
-    #             dataset2save.create_dataset(k, data=traj2Save[idx][k], compression='gzip')
-    #         traj2Save[idx] = reset_data()
-    #         traj2SaveIdx[idx] += 1
-    #         eps_count[idx] = 0
-    #         trans_count[idx] = 0
+    for idx in range(num_tasks):
+      if len(traj2Save[idx]['observation']) > dataSaveInterval:
+          traj2SaveEps[idx] += eps_count[idx]
+          traj2SaveTrans[idx] += trans_count[idx]
+          logging.info(f'saving data, save idx: {traj2SaveIdx[idx]} task: {task_set[idx]} cur transitions: {trans_count[idx]}  cur episodes: {eps_count[idx]}')
+          logging.info(f'saved transitions: {traj2SaveTrans[idx]} saved episodes: {traj2SaveEps[idx]}')
+          dataset2save = h5py.File(FLAGS.logdir + '/' + task_set[idx] + '_dataset/' + str(idx) + '_' + str(traj2SaveIdx[idx] % maxSave) + '.hdf5', 'w')
+          npify(traj2Save[idx])
+          for k in traj2Save[idx]:
+              dataset2save.create_dataset(k, data=traj2Save[idx][k], compression='gzip')
+          traj2Save[idx] = reset_data()
+          traj2SaveIdx[idx] += 1
+          eps_count[idx] = 0
+          trans_count[idx] = 0
 
 
   logger.start(additional_logs)

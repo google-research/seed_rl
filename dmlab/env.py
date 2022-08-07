@@ -160,10 +160,8 @@ def create_environment(task, config):
       cur_game = 'contributed/dmlab30/' + games.DMLAB_30[task % len(games.DMLAB_30)]
     elif config.sub_task == "dmlab26":
       cur_game = 'contributed/dmlab30/' + games.DMLAB_26[task % len(games.DMLAB_26)]
-    elif config.sub_task == "sky":
-      cur_game = 'contributed/dmlab30/' + games.sky[task % len(games.sky)]
-    elif config.sub_task == "nat":
-      cur_game = 'contributed/dmlab30/' + games.nat[task % len(games.nat)]
+    elif config.sub_task == "natsky":
+      cur_game = 'contributed/dmlab30/' + games.natsky[task % len(games.natsky)]
     elif config.sub_task == "psych":
       cur_game = 'contributed/dmlab30/' + games.psych[task % len(games.psych)]
     elif config.sub_task == "explore":

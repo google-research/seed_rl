@@ -190,13 +190,10 @@ psych = [
 ]
 
 
-nat = [
+natsky = [
     'natlab_fixed_large_map',
     'natlab_varying_map_regrowth',
     'natlab_varying_map_randomized',
-]
-
-sky = [
     'skymaze_irreversible_path_hard',
     'skymaze_irreversible_path_varied',
 ]

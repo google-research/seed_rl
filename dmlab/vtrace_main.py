@@ -33,8 +33,8 @@ import os
 FLAGS = flags.FLAGS
 
 # Optimizer settings.
-flags.DEFINE_float('learning_rate', 0.0001, 'Learning rate.')
-flags.DEFINE_float('adam_epsilon', .000000003125, 'Adam epsilon.')
+flags.DEFINE_float('learning_rate', 0.00031866995608948655, 'Learning rate.')
+flags.DEFINE_float('adam_epsilon', .0000003125, 'Adam epsilon.')
 flags.DEFINE_float('rms_epsilon', .1, 'RMS epsilon.')
 flags.DEFINE_float('rms_momentum', 0., 'RMS momentum.')
 flags.DEFINE_float('rms_decay', .99, 'RMS decay.')
@@ -57,7 +57,7 @@ flags.DEFINE_string('init_checkpoint', None,
                     'Path to the checkpoint used to initialize the agent.')
 
 # Loss settings.
-flags.DEFINE_float('entropy_cost', 0.001, 'Entropy cost/multiplier.')
+flags.DEFINE_float('entropy_cost', 0.0033391318945337044, 'Entropy cost/multiplier.')
 flags.DEFINE_float('target_entropy', None, 'If not None, the entropy cost is '
                    'automatically adjusted to reach the desired entropy level.')
 flags.DEFINE_float('entropy_cost_adjustment_speed', 10., 'Controls how fast '
@@ -99,10 +99,8 @@ def main(argv):
     FLAGS.task_names = games.OTHERS
   elif FLAGS.sub_task == 'dmlab26':
     FLAGS.task_names = games.DMLAB_26
-  elif FLAGS.sub_task == 'sky':
-    FLAGS.task_names = games.sky
-  elif FLAGS.sub_task == 'nat':
-    FLAGS.task_names = games.nat
+  elif FLAGS.sub_task == 'natsky':
+    FLAGS.task_names = games.natsky
   elif FLAGS.sub_task == 'psych':
     FLAGS.task_names = games.psych
   elif FLAGS.sub_task == 'explore':

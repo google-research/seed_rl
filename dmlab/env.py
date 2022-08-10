@@ -25,7 +25,10 @@ import numpy as np
 from seed_rl.common import common_flags
 from seed_rl.dmlab import games
 import tensorflow as tf
-
+import torch
+import torch.nn
+from torchtext.vocab import GloVe
+from torchtext.data.utils import get_tokenizer
 import deepmind_lab
 
 FLAGS = flags.FLAGS
@@ -105,38 +108,120 @@ class LevelCache(object):
             tf.io.gfile.copy(pk3_path, path)
 
 
+class DmLab_extra(gym.Env):
+    """DeepMind Lab wrapper."""
+
+    def __init__(self, game, seed, is_test, config, num_action_repeats=4,
+                 action_set=DEFAULT_ACTION_SET, level_cache_dir='./level_cache'):
+      if is_test:
+          config['allowHoldOutLevels'] = 'true'
+          # Mixer seed for evalution, see
+          # https://github.com/deepmind/lab/blob/master/docs/users/python_api.md
+          config['mixerSeed'] = 0x600D5EED
+      self.level = game
+      config['datasetPath'] = FLAGS.dataset_path
+
+      self._num_action_repeats = num_action_repeats
+      self._random_state = np.random.RandomState(seed=seed)
+      if FLAGS.homepath:
+          deepmind_lab.set_runfiles_path(FLAGS.homepath)
+      self._env = deepmind_lab.Lab(
+          level=self.level,
+          observations=['RGB_INTERLEAVED', 'INSTR'],
+          level_cache=LevelCache(
+              level_cache_dir) if level_cache_dir else None,
+          config={k: str(v) for k, v in config.items()},
+      )
+      self._action_set = action_set
+      self.action_space = gym.spaces.Discrete(len(self._action_set))
+      self.observation_space = gym.spaces.Box(
+          low=0,
+          high=255,
+          shape=(config['height'], config['width'], 3),
+          dtype=np.uint8)
+      self.embedding_space = gym.spaces.Box(
+          low=-1000,
+          high=1000,
+          shape=(10, 25),
+          dtype=np.float32)
+      self.glove_vectors = GloVe(name="twitter.27B", dim=25)
+      self.tokenizer = get_tokenizer("basic_english")
+        
+
+    def _observation(self):
+        # return self._env.observations()['RGB_INTERLEAVED']
+        obs =  self._env.observations()
+        return [obs[k] for k in obs.keys()]
+
+    def reset(self):
+        self._env.reset(seed=self._random_state.randint(0, 2 ** 31 - 1))
+        observation, instruction = self._observation()
+        embedding, inst_len = self.embed(instruction)
+        return [observation, embedding, inst_len, instruction]
+
+    def step(self, action):
+        raw_action = np.array(self._action_set[action], np.intc)
+        reward = self._env.step(raw_action, num_steps=self._num_action_repeats)
+        done = not self._env.is_running()
+        if done:
+          observation = None
+          embedding = None
+          instruction = None
+          inst_len = 0
+        else:
+          observation, instruction = self._observation()
+          embedding, inst_len = self.embed(instruction)
+        return [observation, embedding, inst_len, instruction], reward, done, {}
+
+    def close(self):
+        self._env.close()
+
+    def embed(self, instruction):
+        with torch.no_grad():
+            tokens = self.tokenizer(str(instruction))
+            if len(tokens) == 0:
+                embedding = np.zeros((1, 25), dtype=np.float32)
+                inst_len = 0
+            else:
+                embedding = self.glove_vectors.get_vecs_by_tokens(tokens, True)
+                inst_len = len(embedding) - 1
+                embedding = np.array(embedding, dtype=np.float32)
+        embedding = np.pad(embedding, ((0, 10 - embedding.shape[0]), (0, 0)), 'constant')
+        return embedding, inst_len
+
+
 class DmLab(gym.Env):
     """DeepMind Lab wrapper."""
 
     def __init__(self, game, seed, is_test, config, num_action_repeats=4,
                  action_set=DEFAULT_ACTION_SET, level_cache_dir='./level_cache'):
-        if is_test:
-            config['allowHoldOutLevels'] = 'true'
-            # Mixer seed for evalution, see
-            # https://github.com/deepmind/lab/blob/master/docs/users/python_api.md
-            config['mixerSeed'] = 0x600D5EED
-        self.level = game
-        config['datasetPath'] = FLAGS.dataset_path
+      if is_test:
+          config['allowHoldOutLevels'] = 'true'
+          # Mixer seed for evalution, see
+          # https://github.com/deepmind/lab/blob/master/docs/users/python_api.md
+          config['mixerSeed'] = 0x600D5EED
+      self.level = game
+      config['datasetPath'] = FLAGS.dataset_path
 
-        self._num_action_repeats = num_action_repeats
-        self._random_state = np.random.RandomState(seed=seed)
-        if FLAGS.homepath:
-            deepmind_lab.set_runfiles_path(FLAGS.homepath)
-        self._env = deepmind_lab.Lab(
-            level=self.level,
-            observations=['RGB_INTERLEAVED', 'INSTR'],
-            level_cache=LevelCache(
-                level_cache_dir) if level_cache_dir else None,
-            config={k: str(v) for k, v in config.items()},
-        )
-        self._action_set = action_set
-        self.action_space = gym.spaces.Discrete(len(self._action_set))
-        self.observation_space = gym.spaces.Box(
-            low=0,
-            high=255,
-            shape=(config['height'], config['width'], 3),
-            dtype=np.uint8)
-
+      self._num_action_repeats = num_action_repeats
+      self._random_state = np.random.RandomState(seed=seed)
+      if FLAGS.homepath:
+          deepmind_lab.set_runfiles_path(FLAGS.homepath)
+      self._env = deepmind_lab.Lab(
+          level=self.level,
+          observations=['RGB_INTERLEAVED', 'INSTR'],
+          level_cache=LevelCache(
+              level_cache_dir) if level_cache_dir else None,
+          config={k: str(v) for k, v in config.items()},
+      )
+      self._action_set = action_set
+      self.action_space = gym.spaces.Discrete(len(self._action_set))
+      self.observation_space = gym.spaces.Box(
+          low=0,
+          high=255,
+          shape=(config['height'], config['width'], 3),
+          dtype=np.uint8)
+        
     def _observation(self):
         return self._env.observations()['RGB_INTERLEAVED']
 
@@ -156,35 +241,34 @@ class DmLab(gym.Env):
 
 
 def create_environment(task, config):
-    if config.sub_task == 'dmlab30':
-      cur_game = 'contributed/dmlab30/' + games.DMLAB_30[task % len(games.DMLAB_30)]
-    elif config.sub_task == "dmlab26":
-      cur_game = 'contributed/dmlab30/' + games.DMLAB_26[task % len(games.DMLAB_26)]
-    elif config.sub_task == "natsky":
-      cur_game = 'contributed/dmlab30/' + games.natsky[task % len(games.natsky)]
-    elif config.sub_task == "psych":
-      cur_game = 'contributed/dmlab30/' + games.psych[task % len(games.psych)]
-    elif config.sub_task == "explore":
-      cur_game = 'contributed/dmlab30/' + games.explore[task % len(games.explore)]
-    elif config.sub_task == "lasers":
-      cur_game = 'contributed/dmlab30/' + games.lasers[task % len(games.lasers)]
-    elif config.sub_task == "rooms":
-      cur_game = 'contributed/dmlab30/' + games.rooms[task % len(games.rooms)]
-    elif config.sub_task == "others":
-      cur_game = games.OTHERS[task % len(games.OTHERS)]
-    elif config.sub_task in games.DMLAB_30:
-      cur_game = 'contributed/dmlab30/' + config.sub_task
-    elif config.sub_task in games.OTHERS:
-      cur_game = config.sub_task
+  cur_game = None
+  if games.tasksets_path.get(config.sub_task, None):
+    cur_game = games.tasksets_path[config.sub_task] + config.task_names[task % len(config.task_names)]
+  else:
+    for taskset in games.tasksets.items():
+      if config.sub_task in taskset[1]:
+        cur_game = games.tasksets_path[taskset[0]] + config.sub_task
+        break
+  if config.extra_input:
+    env = DmLab_extra(
+        cur_game,
+        seed=task,
+        is_test=False,
+        config={
+            'width': config.width,
+            'height': config.height,
+            'logLevel': 'WARN',
+        })
+  else:
     env = DmLab(
-      cur_game,
-      seed=task,
-      is_test=False,
-      config={
-          'width': config.width,
-          'height': config.height,
-          'logLevel': 'WARN',
-      })
-    logging.info('Action repeats: %s', env._num_action_repeats)
-    logging.info('Creating environment: %s', env.level)
-    return env
+        cur_game,
+        seed=task,
+        is_test=False,
+        config={
+            'width': config.width,
+            'height': config.height,
+            'logLevel': 'WARN',
+        })
+  logging.info('Action repeats: %s', env._num_action_repeats)
+  logging.info('Creating environment: %s', env.level)
+  return env

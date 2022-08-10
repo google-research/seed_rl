@@ -38,6 +38,8 @@ flags.DEFINE_float('adam_epsilon', 1e-3, 'Adam epsilon.')
 flags.DEFINE_string('sub_task', 'all', 'sub tasks')
 flags.DEFINE_list('task_names', [], 'names of tasks')
 flags.DEFINE_float('reward_threshold', 0., 'reward threshold for sampling')
+flags.DEFINE_string('init_checkpoint', '../procgen_ckpt/dodgeball/ckpt-104', 'Path to the checkpoint used to initialize the agent.')
+# flags.DEFINE_string('init_checkpoint', None, 'Path to the checkpoint used to initialize the agent.')
 
 def create_agent(env_output_specs, num_actions):
   return networks.DuelingLSTMDQNNet(
@@ -45,9 +47,9 @@ def create_agent(env_output_specs, num_actions):
 
 
 def create_optimizer(final_iteration):
-  learning_rate_fn = lambda iteration: FLAGS.learning_rate
-  # learning_rate_fn = tf.keras.optimizers.schedules.PolynomialDecay(
-  #   FLAGS.learning_rate, final_iteration, 0)
+  # learning_rate_fn = lambda iteration: FLAGS.learning_rate
+  learning_rate_fn = tf.keras.optimizers.schedules.PolynomialDecay(
+    FLAGS.learning_rate, final_iteration, 0)
   optimizer = tf.keras.optimizers.Adam(FLAGS.learning_rate,
                                        epsilon=FLAGS.adam_epsilon)
   return optimizer, learning_rate_fn
@@ -79,4 +81,7 @@ def main(argv):
 
 
 if __name__ == '__main__':
+  gpus = tf.config.experimental.list_physical_devices('GPU')
+  if gpus:
+      tf.config.experimental.set_memory_growth(gpus[0], True)
   app.run(main)

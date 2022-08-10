@@ -38,9 +38,10 @@ FLAGS = flags.FLAGS
 
 # `observation` is the observation *after* a transition. When `done` is True,
 # `observation` will be the observation *after* the reset.
+EnvOutput_extra = collections.namedtuple(
+    'EnvOutput', 'reward done observation embedding inst_len abandoned episode_step')
 EnvOutput = collections.namedtuple(
     'EnvOutput', 'reward done observation abandoned episode_step')
-
 
 Settings = collections.namedtuple(
     'Settings', 'strategy inference_devices training_strategy encode decode')

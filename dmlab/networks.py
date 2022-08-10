@@ -169,3 +169,122 @@ class ImpalaDeep(tf.Module):
     core_outputs = tf.stack(core_output_list)
 
     return utils.batch_apply(self._head, (core_outputs,)), core_state
+
+class ImpalaDeep_extra(tf.Module):
+  """Agent with ResNet.
+
+  The deep model in
+  "IMPALA: Scalable Distributed Deep-RL with
+  Importance Weighted Actor-Learner Architectures"
+  by Espeholt, Soyer, Munos et al.
+  """
+
+  def __init__(self, num_actions):
+    super(ImpalaDeep_extra, self).__init__(name='impala_deep')
+
+    # Parameters and layers for unroll.
+    self._num_actions = num_actions
+    self._core = tf.keras.layers.LSTMCell(256)
+    self._lcore = tf.keras.layers.RNN(tf.keras.layers.LSTMCell(64), return_sequences=True)
+    # Parameters and layers for _torso.
+    self._stacks = [
+        _Stack(num_ch, num_blocks)
+        for num_ch, num_blocks in [(16, 2), (32, 2), (32, 2)]
+    ]
+    self._conv_to_linear = tf.keras.layers.Dense(256)
+
+    # Layers for _head.
+    self._policy_logits = tf.keras.layers.Dense(
+        self._num_actions, name='policy_logits')
+    self._baseline = tf.keras.layers.Dense(1, name='baseline')
+
+  def initial_state(self, batch_size):
+    return self._core.get_initial_state(batch_size=batch_size, dtype=tf.float32)
+  
+  def language(self, embedding, inst_len):
+    helper = tf.experimental.numpy.arange(start=0, stop=len(inst_len), dtype=tf.int32)
+    helper = helper.reshape(-1, 1)
+    inst_len = tf.reshape(inst_len, (-1, 1))
+    gather_idx = tf.concat([helper, inst_len], 1)
+    l_core_out = self._lcore(embedding)
+    l_core_out = tf.gather_nd(l_core_out, gather_idx)
+    return tf.reshape(l_core_out, [-1, 64])
+
+  def _torso(self, prev_action, env_output):
+    reward, _, frame, embedding, inst_len, _, _ = env_output
+    l_out = self.language(embedding, inst_len)
+    # Convert to floats.
+    frame = tf.cast(frame, tf.float32)
+
+    frame /= 255
+    conv_out = frame
+    for stack in self._stacks:
+      conv_out = stack(conv_out)
+
+    conv_out = tf.nn.relu(conv_out)
+    conv_out = tf.keras.layers.Flatten()(conv_out)
+
+    conv_out = self._conv_to_linear(conv_out)
+    conv_out = tf.nn.relu(conv_out)
+
+    # Append clipped last reward and one hot last action.
+    clipped_reward = tf.expand_dims(tf.clip_by_value(reward, -1, 1), -1)
+    one_hot_prev_action = tf.one_hot(prev_action, self._num_actions)
+    return tf.concat([conv_out, clipped_reward, one_hot_prev_action, l_out], axis=1)
+
+  def _head(self, core_output):
+    policy_logits = self._policy_logits(core_output)
+    baseline = tf.squeeze(self._baseline(core_output), axis=-1)
+
+    # Sample an action from the policy.
+    new_action = tf.random.categorical(policy_logits, 1, dtype=tf.int64)
+    new_action = tf.squeeze(new_action, 1, name='action')
+
+    return AgentOutput(new_action, policy_logits, baseline)
+
+  # Not clear why, but if "@tf.function" declarator is placed directly onto
+  # __call__, training fails with "uninitialized variable *baseline".
+  # when running on multiple learning tpu cores.
+
+
+  @tf.function
+  def get_action(self, *args, **kwargs):
+    return self.__call__(*args, **kwargs)
+
+  def __call__(self,
+               prev_actions,
+               env_outputs,
+               core_state,
+               unroll=False,
+               is_training=False):
+    if not unroll:
+      # Add time dimension.
+      prev_actions, env_outputs = tf.nest.map_structure(
+          lambda t: tf.expand_dims(t, 0), (prev_actions, env_outputs))
+    outputs, core_state = self._unroll(prev_actions, env_outputs, core_state)
+    if not unroll:
+      # Remove time dimension.
+      outputs = tf.nest.map_structure(lambda t: tf.squeeze(t, 0), outputs)
+
+    return outputs, core_state
+
+  def _unroll(self, prev_actions, env_outputs, core_state):
+    unused_reward, done, unused_observation, embedding, inst_len, _, _ = env_outputs
+
+    torso_outputs = utils.batch_apply(self._torso, (prev_actions, env_outputs))
+
+    initial_core_state = self._core.get_initial_state(
+        batch_size=tf.shape(prev_actions)[1], dtype=tf.float32)
+    core_output_list = []
+    for input_, d in zip(tf.unstack(torso_outputs), tf.unstack(done)):
+      # If the episode ended, the core state should be reset before the next.
+      core_state = tf.nest.map_structure(
+          lambda x, y, d=d: tf.where(  
+              tf.reshape(d, [d.shape[0]] + [1] * (x.shape.rank - 1)), x, y),
+          initial_core_state,
+          core_state)
+      core_output, core_state = self._core(input_, core_state)
+      core_output_list.append(core_output)
+    core_outputs = tf.stack(core_output_list)
+
+    return utils.batch_apply(self._head, (core_outputs,)), core_state

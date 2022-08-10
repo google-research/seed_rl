@@ -30,12 +30,11 @@ export AGENT=$2
 export NUM_ACTORS=$3
 export ENV_PER_ACTOR=$4
 export SUB_TASK=$5
-export PORT=$6
-export CUDA=$7
-export RUN_ID=$8
+export CUDA=$6
+export CKPT_ID=$7
 
-RUN_NAME="sampler_${ENVIRONMENT}_${AGENT}_${NUM_ACTORS}_${ENV_PER_ACTOR}_${SUB_TASK}_${PORT}_${CUDA}_${RUN_ID}"
-LOG_DIR="/outdata/logs/seed_rl/sampler_${ENVIRONMENT}_${AGENT}/${SUB_TASK}/${NUM_ACTORS}_${ENV_PER_ACTOR}_${PORT}_${CUDA}_${RUN_ID}"
+RUN_NAME="sampler_${ENVIRONMENT}_${AGENT}_${NUM_ACTORS}_${ENV_PER_ACTOR}_${SUB_TASK}_${CUDA}_${CKPT_ID}"
+LOG_DIR="/outdata/${ENVIRONMENT}_dataset/${SUB_TASK}"
 # shift 4
 shift 3
 if [[ $1 ]]; then
@@ -54,5 +53,5 @@ if [[ "19.03" > $docker_version ]]; then
   docker run -v ~/:/outdata --entrypoint ./docker/run.sh -ti -it -p 6006-6015:6006-6015 --name seed --rm seed_rl:$ENVIRONMENT $ENVIRONMENT $AGENT $NUM_ACTORS $ENV_BATCH_SIZE $@
 else
   # docker run --gpus '"device=5"' -v ~/:/outdata --entrypoint ./docker/run.sh -ti -it -p 6026-6035:6026-6035 -e HOST_PERMS="$(id -u):$(id -g)" --name ${RUN_NAME} --rm seed_rl:$ENVIRONMENT $ENVIRONMENT $AGENT $NUM_ACTORS $ENV_BATCH_SIZE $LOG_DIR $@
-  docker run --gpus '"device='"${CUDA}"'"' -v ~/:/outdata --entrypoint ./docker/sample_${ENVIRONMENT}.sh -ti -it -p ${PORT}-${PORT}:${PORT}-${PORT} -e HOST_PERMS="$(id -u):$(id -g)" --name ${RUN_NAME} --rm seed_rl:$ENVIRONMENT $ENVIRONMENT $AGENT $NUM_ACTORS $ENV_BATCH_SIZE $LOG_DIR $PORT $SUB_TASK $@
+  docker run --gpus '"device='"${CUDA}"'"' -v /raid/cz:/outdata --entrypoint ./docker/sample.sh -ti -it -e HOST_PERMS="$(id -u):$(id -g)" --name ${RUN_NAME} --rm seed_rl:$ENVIRONMENT $ENVIRONMENT $AGENT $NUM_ACTORS $ENV_BATCH_SIZE $LOG_DIR $CKPT_ID $SUB_TASK $@
 fi

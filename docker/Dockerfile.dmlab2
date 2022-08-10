@@ -17,5 +17,8 @@ ADD . /seed_rl/
 WORKDIR /seed_rl/docker/prepare/
 
 RUN bash init_dmlab.sh
+RUN pip3 install torch==1.7.1+cpu -f https://download.pytorch.org/whl/torch_stable.html
+RUN pip3 install torchtext==0.8.1
+
 # WORKDIR /seed_rl
 # ENTRYPOINT ["python3", "gcp/run.py"]

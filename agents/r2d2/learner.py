@@ -42,7 +42,7 @@ import tensorflow as tf
 
 flags.DEFINE_integer('save_checkpoint_secs', 900,
                      'Checkpoint save period in seconds.')
-flags.DEFINE_integer('total_environment_frames', int(6e8),
+flags.DEFINE_integer('total_environment_frames', int(1e10),
                      'Total environment frames to train for.')
 flags.DEFINE_integer('batch_size', 64, 'Batch size for training.')
 flags.DEFINE_float('replay_ratio', 1.5,
@@ -55,7 +55,7 @@ flags.DEFINE_integer('inference_batch_size', -1,
 flags.DEFINE_integer('unroll_length', 100, 'Unroll length in agent steps.')
 flags.DEFINE_integer('num_training_tpus', 1, 'Number of TPUs for training.')
 flags.DEFINE_integer('update_target_every_n_step',
-                     200,
+                     400,
                      'Update the target network at this frequency (expressed '
                      'in number of training steps)')
 flags.DEFINE_integer('replay_buffer_size', int(1e3),
@@ -647,6 +647,11 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
 
   ckpt = tf.train.Checkpoint(
       agent=agent, target_agent=target_agent, optimizer=optimizer)
+  if FLAGS.init_checkpoint is not None:
+    tf.print('Loading initial checkpoint from %s...' % FLAGS.init_checkpoint)
+    with strategy.scope():
+      ckpt.restore(FLAGS.init_checkpoint).assert_consumed()
+      # ckpt.restore(FLAGS.init_checkpoint)
   manager = tf.train.CheckpointManager(
       ckpt, FLAGS.logdir, max_to_keep=100, keep_checkpoint_every_n_hours=6)
   last_ckpt_time = 0  # Force checkpointing of the initial model.
@@ -868,7 +873,7 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
         """Logs environment summaries."""
         summary_writer.set_as_default()
         n_episodes = info_queue.size()
-        n_episodes -= n_episodes % 100
+        n_episodes -= n_episodes % 1000
         if tf.not_equal(n_episodes, 0):
           tf.summary.experimental.set_step(num_env_frames)
           episode_info = info_queue.dequeue_many(n_episodes)

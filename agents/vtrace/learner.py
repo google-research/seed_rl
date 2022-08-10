@@ -55,7 +55,10 @@ def compute_loss(logger, parametric_action_distribution, agent, agent_state,
   # At this point, we have unroll length + 1 steps. The last step is only used
   # as bootstrap value, so it's removed.
   agent_outputs = tf.nest.map_structure(lambda t: t[:-1], agent_outputs)
-  rewards, done, _, _, _ = tf.nest.map_structure(lambda t: t[1:], env_outputs)
+  if FLAGS.extra_input:
+    rewards, done, _, _, _, _, _ = tf.nest.map_structure(lambda t: t[1:], env_outputs)
+  else:
+    rewards, done, _, _, _ = tf.nest.map_structure(lambda t: t[1:], env_outputs)
   learner_outputs = tf.nest.map_structure(lambda t: t[:-1], learner_outputs)
 
   if FLAGS.max_abs_reward:
@@ -165,21 +168,31 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
   logging.info('Action repeats: %d', env._num_action_repeats)
   parametric_action_distribution = get_parametric_distribution_for_action_space(
       env.action_space)
-  env_output_specs = utils.EnvOutput(
-      tf.TensorSpec([], tf.float32, 'reward'),
-      tf.TensorSpec([], tf.bool, 'done'),
-      tf.TensorSpec(env.observation_space.shape, env.observation_space.dtype,
-                    'observation'),
-      tf.TensorSpec([], tf.bool, 'abandoned'),
-      tf.TensorSpec([], tf.int32, 'episode_step'),
-  )
+  if FLAGS.extra_input:
+    env_output_specs = utils.EnvOutput_extra(
+        tf.TensorSpec([], tf.float32, 'reward'),
+        tf.TensorSpec([], tf.bool, 'done'),
+        tf.TensorSpec(env.observation_space.shape, env.observation_space.dtype, 'observation'),
+        tf.TensorSpec(env.embedding_space.shape, env.embedding_space.dtype, 'embedding'),
+        tf.TensorSpec([], tf.int64, 'inst_len'),
+        tf.TensorSpec([], tf.bool, 'abandoned'),
+        tf.TensorSpec([], tf.int32, 'episode_step'),
+    )
+  else:
+    env_output_specs = utils.EnvOutput(
+        tf.TensorSpec([], tf.float32, 'reward'),
+        tf.TensorSpec([], tf.bool, 'done'),
+        tf.TensorSpec(env.observation_space.shape, env.observation_space.dtype, 'observation'),
+        tf.TensorSpec([], tf.bool, 'abandoned'),
+        tf.TensorSpec([], tf.int32, 'episode_step'),
+    )
   action_specs = tf.TensorSpec(env.action_space.shape,
                                env.action_space.dtype, 'action')
   agent_input_specs = (action_specs, env_output_specs)
 
   # Initialize agent and variables.
   agent = create_agent_fn(env.action_space, env.observation_space,
-                          parametric_action_distribution)
+                          parametric_action_distribution, FLAGS.extra_input)
   initial_agent_state = agent.initial_state(1)
   agent_state_specs = tf.nest.map_structure(
       lambda t: tf.TensorSpec(t.shape[1:], t.dtype), initial_agent_state)
@@ -235,6 +248,10 @@ def learner_loop(create_env_fn, create_agent_fn, create_optimizer_fn):
         loss, logs = compute_loss(logger, parametric_action_distribution, agent,
                                   *args)
       grads = tape.gradient(loss, agent.trainable_variables)
+      # gradient_norm_before_clip = tf.linalg.global_norm(grads)
+      # if FLAGS.clip_norm:
+      #   grads, _ = tf.clip_by_global_norm(
+      #       grads, FLAGS.clip_norm, use_norm=gradient_norm_before_clip)
       for t, g in zip(temp_grads, grads):
         t.assign(g)
       return loss, logs

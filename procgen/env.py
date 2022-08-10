@@ -68,3 +68,25 @@ def create_environment(task, config):
     logging.info(env.action_space)
 
     return env
+
+def create_gym3_environment(task, config):
+    if config.sub_task != "all":
+        full_game_name = config.sub_task
+        game_difficulty = games[config.sub_task][1]
+    else:
+        game_list = games.values()
+        full_game_name = game_list[task % 16]
+        game_difficulty = games[game_list[task % 16]][1]
+
+    # env = gym.make("procgen:procgen-" + full_game_name + "-v0", distribution_mode=game_difficulty,
+    #                 start_level=0, num_levels=100000)
+
+    env = ProcgenEnv(num_envs=config.env_batch_size, env_name=full_game_name, num_levels=100000, start_level=0, distribution_mode=game_difficulty)
+    env.observation_space = env.observation_space['rgb']
+
+    logging.info('Creating environment: %s', full_game_name)
+    logging.info('Distribution mode: %s', game_difficulty)
+    logging.info(env.observation_space)
+    logging.info(env.action_space)
+
+    return env

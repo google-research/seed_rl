@@ -20,7 +20,7 @@ die () {
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd $DIR
-
+cp -r /outdata/seed_rl /
 ENVIRONMENT=$1
 AGENT=$2
 NUM_ACTORS=$3

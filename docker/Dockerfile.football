@@ -16,6 +16,8 @@ FROM tensorflow/tensorflow:2.4.1-gpu
 # Needed to disable interactive configuration by tzdata.
 RUN ln -fs /usr/share/zoneinfo/Europe/Dublin /etc/localtime
 
+RUN rm /etc/apt/sources.list.d/cuda.list
+RUN rm /etc/apt/sources.list.d/nvidia-ml.list
 RUN apt-get update && apt-get install -y \
   git \
   cmake \

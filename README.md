@@ -1,7 +1,9 @@
-# SEED
+# SEED (archived)
 
 This repository contains an implementation of distributed reinforcement learning
 agent where both training and inference are performed on the learner.
+
+**The project is a research project and has now been archived. There will be no further updates.**
 
 <img src="./docs/architecture.gif" alt="Architecture" width="50%" height="50%">
 
